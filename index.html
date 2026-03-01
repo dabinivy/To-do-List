@@ -1,0 +1,737 @@
+<!DOCTYPE html>
+<html lang="ko">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Todo App UI</title>
+
+    <!-- React & ReactDOM -->
+    <script src="https://unpkg.com/react@18/umd/react.development.js" crossorigin></script>
+    <script src="https://unpkg.com/react-dom@18/umd/react-dom.development.js" crossorigin></script>
+
+    <!-- Babel -->
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+
+    <!-- Lucide Icons -->
+    <script src="https://unpkg.com/lucide@latest"></script>
+
+    <!-- Tailwind Config -->
+    <script>
+        tailwind.config = {
+            darkMode: 'class',
+            theme: {
+                extend: {
+                    colors: {
+                        appBlack: '#000000',
+                        appGray: {
+                            100: '#F2F2F7',
+                            200: '#E5E5EA',
+                            300: '#D1D1D6',
+                            400: '#C7C7CC',
+                            500: '#AEAEB2',
+                            600: '#8E8E93',
+                            700: '#3A3A3C',
+                            800: '#2C2C2E',
+                            900: '#1C1C1E',
+                        },
+                        catMorning: '#FFD60A', // Previously Rest (Yellow)
+                        catAfternoon: '#00D045', // Previously Health (Green)
+                        catEvening: '#0A84FF', // Previously Workout (Blue)
+                    },
+                    fontFamily: {
+                        sans: ['-apple-system', 'BlinkMacSystemFont', '"Segoe UI"', 'Roboto', 'Helvetica', 'Arial', 'sans-serif'],
+                    }
+                }
+            }
+        }
+    </script>
+
+    <style>
+        /* Custom CSS to hide scrollbar for horizontal calendar and general styling */
+        body {
+            background-color: #000;
+            color: #fff;
+            -webkit-font-smoothing: antialiased;
+            -moz-osx-font-smoothing: grayscale;
+        }
+
+        .no-scrollbar::-webkit-scrollbar {
+            display: none;
+        }
+
+        .no-scrollbar {
+            -ms-overflow-style: none;
+            scrollbar-width: none;
+        }
+
+        @keyframes fadeIn {
+            from {
+                opacity: 0;
+                transform: translateY(-10px);
+            }
+
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+
+        .animate-fade-in {
+            animation: fadeIn 0.3s ease-out;
+        }
+    </style>
+</head>
+
+<body>
+
+    <!-- Root element for React -->
+    <div id="root"></div>
+
+    <!-- React Code -->
+    <script type="text/babel">
+        const { useState, useEffect, useRef } = React;
+
+        // --- Components ---
+
+        // 1. Profile Header
+        const ProfileHeader = () => (
+            <div className="flex justify-between items-center px-6 pt-12 pb-4">
+                <div className="flex items-center space-x-3">
+                    {/* Overlapping Avatars simulating the image */}
+                    <div className="relative w-16 h-16">
+                        <div className="absolute top-0 left-0 w-12 h-12 bg-appGray-800 rounded-full flex items-center justify-center border-2 border-black z-10">
+                            <i data-lucide="user" className="w-5 h-5 text-gray-500"></i>
+                        </div>
+                        <div className="absolute top-2 left-6 w-12 h-12 bg-appGray-700 rounded-full flex items-center justify-center border-2 border-black z-0">
+                            <i data-lucide="users" className="w-5 h-5 text-gray-400"></i>
+                        </div>
+                        <span className="absolute -bottom-4 left-3 text-xs font-bold text-white">me</span>
+                    </div>
+                </div>
+                <div className="flex space-x-4">
+                    {/* Placeholder for top right icons like calendar, direct etc if needed based on the image */}
+                    <div className="w-8 h-8 rounded bg-transparent border border-gray-600 flex items-center justify-center">
+                        <span className="text-xs font-bold">31</span>
+                    </div>
+                    <i data-lucide="send" className="w-6 h-6 text-white transform -rotate-45"></i>
+                    <i data-lucide="more-horizontal" className="w-6 h-6 text-white"></i>
+                </div>
+            </div>
+        );
+
+        // Single Square Icon with white border and transparent fill (unless checked)
+        const SquareIcon = ({ bgClass = 'bg-transparent', size = 'w-6 h-6', children }) => (
+            <div className={`relative ${size} flex items-center justify-center rounded-lg border border-white ${bgClass} transition-colors duration-200`}>
+                <div className="absolute z-10 text-[12px] font-bold text-white drop-shadow-md">
+                    {children}
+                </div>
+            </div>
+        );
+
+        // 2. Weekly Calendar
+        const WeeklyCalendar = ({ onSwipeDown, viewDate, onSelectDay }) => {
+            const [startY, setStartY] = useState(0);
+
+            const handleStart = (y) => setStartY(y);
+            const handleEnd = (y) => {
+                const diff = y - startY;
+                if (startY > 0 && Math.abs(diff) > 60) {
+                    onSwipeDown();
+                }
+                setStartY(0);
+            };
+
+            const handleTouchStart = (e) => handleStart(e.touches[0].clientY);
+            const handleTouchEnd = (e) => handleEnd(e.changedTouches[0].clientY);
+            const handleMouseDown = (e) => handleStart(e.clientY);
+            const handleMouseUp = (e) => handleEnd(e.clientY);
+            const handleMouseLeave = () => setStartY(0);
+
+            // Calculate the 7 days of the week containing viewDate (starting from Monday)
+            const getWeekDays = (date) => {
+                const day = date.getDay(); // 0(Sun) - 6(Sat)
+                const diff = date.getDate() - (day === 0 ? 6 : day - 1); // Adjust for Monday start
+                const monday = new Date(date);
+                monday.setDate(diff);
+
+                return Array.from({ length: 7 }, (_, i) => {
+                    const d = new Date(monday);
+                    d.setDate(monday.getDate() + i);
+                    return d;
+                });
+            };
+
+            const HOLIDAYS = [
+                "2026-1-1", "2026-2-16", "2026-2-17", "2026-2-18", "2026-3-1",
+                "2026-3-2", "2026-5-5", "2026-5-24", "2026-6-6", "2026-8-15",
+                "2026-9-24", "2026-9-25", "2026-9-26", "2026-10-3", "2026-10-9", "2026-12-25"
+            ];
+            const isHoliday = (date) => HOLIDAYS.includes(`${date.getFullYear()}-${date.getMonth() + 1}-${date.getDate()}`);
+
+            const weekDays = getWeekDays(viewDate);
+            const dayLabels = ['월', '화', '수', '목', '금', '토', '일'];
+
+            return (
+                <div className="px-5 pb-4 mb-2 animate-fade-in cursor-grab active:cursor-grabbing mt-4"
+                    onTouchStart={handleTouchStart} onTouchEnd={handleTouchEnd}
+                    onMouseDown={handleMouseDown} onMouseUp={handleMouseUp} onMouseLeave={handleMouseUp}>
+                    <div className="grid grid-cols-7 gap-y-4 gap-x-1 text-center mt-2">
+                        {dayLabels.map((label, idx) => (
+                            <span key={idx} className={`${idx === 5 ? 'text-[#0A84FF]' : idx === 6 ? 'text-[#FF453A]' : 'text-appGray-400'} text-xs font-medium mb-1`}>
+                                {label}
+                            </span>
+                        ))}
+
+                        {weekDays.map((date, idx) => {
+                            const isSelected = date.toDateString() === viewDate.toDateString();
+                            let textClass = 'text-white';
+                            if (date.getDay() === 0 || isHoliday(date)) textClass = 'text-[#FF453A]';
+                            else if (date.getDay() === 6) textClass = 'text-[#0A84FF]';
+
+                            return (
+                                <div key={idx} className="flex flex-col items-center justify-center space-y-0.5 relative h-[38px] cursor-pointer" onClick={() => onSelectDay(date)}>
+                                    <div className="absolute inset-0 flex items-center justify-center top-0">
+                                        <div className="w-[28px] h-[28px] rounded-full bg-appGray-700 opacity-60"></div>
+                                    </div>
+                                    <div className={`relative z-10 w-7 h-7 flex items-center justify-center rounded-full text-[14px] transition-colors duration-200 ${isSelected ? 'bg-white text-black font-bold' : textClass}`}>
+                                        {date.getDate()}
+                                    </div>
+                                </div>
+                            );
+                        })}
+                    </div>
+                </div >
+            );
+        };
+
+        const MonthlyCalendar = ({ onSwipeUp, viewDate, onSelectDay }) => {
+            const [startY, setStartY] = useState(0);
+
+            const handleStart = (y) => setStartY(y);
+            const handleEnd = (y) => {
+                const diff = startY - y;
+                if (startY > 0 && Math.abs(diff) > 60) {
+                    onSwipeUp();
+                }
+                setStartY(0);
+            };
+
+            const handleTouchStart = (e) => handleStart(e.touches[0].clientY);
+            const handleTouchEnd = (e) => handleEnd(e.changedTouches[0].clientY);
+            const handleMouseDown = (e) => handleStart(e.clientY);
+            const handleMouseUp = (e) => handleEnd(e.clientY);
+            const handleMouseLeave = () => setStartY(0);
+
+            const year = viewDate.getFullYear();
+            const month = viewDate.getMonth();
+
+            const firstDayOfMonth = new Date(year, month, 1);
+            const daysInMonth = new Date(year, month + 1, 0).getDate();
+
+            // Monday start: 0(Mon) - 6(Sun)
+            const startDay = (firstDayOfMonth.getDay() === 0 ? 6 : firstDayOfMonth.getDay() - 1);
+
+            const calendarGrid = [];
+            for (let i = 0; i < startDay; i++) calendarGrid.push(null);
+            for (let i = 1; i <= daysInMonth; i++) calendarGrid.push(i);
+
+            const dayLabels = ['월', '화', '수', '목', '금', '토', '일'];
+
+            const HOLIDAYS = [
+                "2026-1-1", "2026-2-16", "2026-2-17", "2026-2-18", "2026-3-1",
+                "2026-3-2", "2026-5-5", "2026-5-24", "2026-6-6", "2026-8-15",
+                "2026-9-24", "2026-9-25", "2026-9-26", "2026-10-3", "2026-10-9", "2026-12-25"
+            ];
+            const isHoliday = (date) => HOLIDAYS.includes(`${date.getFullYear()}-${date.getMonth() + 1}-${date.getDate()}`);
+
+            return (
+                <div className="px-5 pb-4 mb-2 animate-fade-in cursor-grab active:cursor-grabbing mt-4"
+                    onTouchStart={handleTouchStart} onTouchEnd={handleTouchEnd}
+                    onMouseDown={handleMouseDown} onMouseUp={handleMouseUp} onMouseLeave={handleMouseLeave}>
+                    <div className="grid grid-cols-7 gap-y-4 gap-x-1 text-center mt-2">
+                        {dayLabels.map((label, idx) => (
+                            <span key={idx} className={`${idx === 5 ? 'text-[#0A84FF]' : idx === 6 ? 'text-[#FF453A]' : 'text-appGray-400'} text-xs font-medium mb-1`}>
+                                {label}
+                            </span>
+                        ))}
+
+                        {calendarGrid.map((day, idx) => {
+                            if (day === null) return <div key={`empty-${idx}`}></div>;
+
+                            const date = new Date(year, month, day);
+                            const isSelected = date.toDateString() === viewDate.toDateString();
+
+                            let textClass = 'text-white';
+                            if (idx % 7 === 6 || isHoliday(date)) textClass = 'text-[#FF453A]';
+                            else if (idx % 7 === 5) textClass = 'text-[#0A84FF]';
+
+                            return (
+                                <div key={day} className="flex flex-col items-center justify-center space-y-0.5 relative h-[38px] cursor-pointer" onClick={() => onSelectDay(date)}>
+                                    <div className="absolute inset-0 flex items-center justify-center top-0">
+                                        <div className="w-[28px] h-[28px] rounded-full bg-appGray-700 opacity-60"></div>
+                                    </div>
+                                    <div className={`relative z-10 w-7 h-7 flex items-center justify-center rounded-full text-[14px] transition-colors duration-200 ${isSelected ? 'bg-white text-black font-bold' : textClass}`}>
+                                        {day}
+                                    </div>
+                                </div>
+                            );
+                        })}
+                    </div>
+                </div >
+            );
+        };
+
+        // 3. Category Header
+        const TodoCategory = ({ title, onAdd }) => (
+            <div className="flex items-center px-6 py-2 mt-4">
+                <div className="flex items-center justify-between bg-appGray-800 rounded-full pl-3 pr-1 py-1 space-x-2 min-w-[120px]">
+                    <div className="flex items-center space-x-2 pl-1 pr-2 py-0.5">
+                        {title === 'Routine' && <i data-lucide="repeat" className="w-4 h-4 text-white"></i>}
+                        {title === 'Morning' && <i data-lucide="sun" className="w-4 h-4 text-catMorning"></i>}
+                        {title === 'Afternoon' && <i data-lucide="clover" className="w-4 h-4 text-catAfternoon"></i>}
+                        {title === 'Evening' && <i data-lucide="moon" className="w-4 h-4 text-catEvening"></i>}
+                        <span className="text-sm font-bold text-white">{title}</span>
+                    </div>
+                    <button
+                        onClick={(e) => { e.stopPropagation(); onAdd && onAdd(); }}
+                        className="w-7 h-7 rounded-full bg-appGray-700 flex items-center justify-center active:bg-appGray-600 transition-colors"
+                    >
+                        <i data-lucide="plus" className="w-4 h-4 text-white"></i>
+                    </button>
+                </div>
+            </div>
+        );
+
+        // 4. Todo Item
+        const TodoItem = ({ text, categoryColor, status, onStatusChange, onEdit, onDelete }) => {
+            const [isMenuOpen, setIsMenuOpen] = useState(false);
+            const [isOptionsMenuOpen, setIsOptionsMenuOpen] = useState(false);
+            const [isEditing, setIsEditing] = useState(false);
+            const [editValue, setEditValue] = useState(text);
+            const inputRef = useRef(null);
+
+            useEffect(() => {
+                if (isEditing && inputRef.current) {
+                    inputRef.current.focus();
+                }
+            }, [isEditing]);
+
+            useEffect(() => {
+                if (isMenuOpen || isOptionsMenuOpen) {
+                    lucide.createIcons();
+                }
+            }, [isMenuOpen, isOptionsMenuOpen]);
+
+            // Map the background color class to a text color class for the icons
+            const activeColorClass = categoryColor.replace('bg-', 'text-');
+
+            const handleIconClick = (e) => {
+                e.stopPropagation(); // prevent triggering other clicks
+                setIsMenuOpen(!isMenuOpen);
+                setIsOptionsMenuOpen(false);
+            };
+
+            const handleOptionsClick = (e) => {
+                e.stopPropagation();
+                setIsOptionsMenuOpen(!isOptionsMenuOpen);
+                setIsMenuOpen(false);
+            };
+
+            const selectStatus = (newStatus, e) => {
+                e.stopPropagation();
+                onStatusChange(newStatus);
+                setIsMenuOpen(false);
+            };
+
+            const handleEdit = (e) => {
+                e.stopPropagation();
+                setIsOptionsMenuOpen(false);
+                setIsEditing(true);
+                setEditValue(text);
+            };
+
+            const handleSaveEdit = () => {
+                if (editValue.trim() !== '' && editValue !== text) {
+                    if (onEdit) onEdit(editValue);
+                } else {
+                    setEditValue(text);
+                }
+                setIsEditing(false);
+            };
+
+            const handleKeyDown = (e) => {
+                if (e.key === 'Enter') {
+                    handleSaveEdit();
+                } else if (e.key === 'Escape') {
+                    setEditValue(text);
+                    setIsEditing(false);
+                }
+            };
+
+            const handleDelete = (e) => {
+                e.stopPropagation();
+                setIsOptionsMenuOpen(false);
+                if (onDelete) onDelete();
+            };
+
+            // Status Icon Helper
+            const renderStatusIcon = () => {
+                switch (status) {
+                    case 'done': return <i data-lucide="check" className={`w-3.5 h-3.5 ${activeColorClass}`}></i>;
+                    case 'in-progress': return <i data-lucide="circle" className={`w-3.5 h-3.5 ${activeColorClass}`}></i>;
+                    case 'postpone': return <i data-lucide="arrow-right" className={`w-3.5 h-3.5 ${activeColorClass}`}></i>;
+                    case 'cancel': return <i data-lucide="x" className={`w-3.5 h-3.5 ${activeColorClass}`}></i>;
+                    default: return null;
+                }
+            };
+
+            // Text Style Helper
+            const getTextStyle = () => {
+                if (status === 'done') {
+                    return 'text-appGray-300 line-through decoration-appGray-600';
+                }
+                return 'text-white';
+            };
+
+            return (
+                <div className="flex items-center justify-between px-6 py-3 cursor-pointer group relative">
+                    <div className="flex items-center space-x-4 flex-1">
+                        <div className="transition-transform duration-200 active:scale-95 flex-shrink-0" onClick={handleIconClick}>
+                            <SquareIcon bgClass="bg-transparent" size="w-6 h-6">
+                                <span key={status}>
+                                    {renderStatusIcon()}
+                                </span>
+                            </SquareIcon>
+                        </div>
+                        {isEditing ? (
+                            <input
+                                ref={inputRef}
+                                type="text"
+                                value={editValue}
+                                onChange={(e) => setEditValue(e.target.value)}
+                                onBlur={handleSaveEdit}
+                                onKeyDown={handleKeyDown}
+                                className="bg-transparent border-b border-appGray-500 text-[15px] text-white outline-none w-full"
+                                onClick={(e) => e.stopPropagation()}
+                            />
+                        ) : (
+                            <span className={`text-[15px] break-all ${getTextStyle()}`}>
+                                {text}
+                            </span>
+                        )}
+                    </div>
+                    <div onClick={handleOptionsClick} className="cursor-pointer p-1 -mr-1 flex-shrink-0">
+                        <i data-lucide="more-horizontal" className="w-5 h-5 text-appGray-600 opacity-50 group-hover:opacity-100"></i>
+                    </div>
+
+                    {/* Status Selection Popup Menu */}
+                    {isMenuOpen && (
+                        <>
+                            <div className="fixed inset-0 z-[100]" onClick={(e) => { e.stopPropagation(); setIsMenuOpen(false); }}></div>
+                            <div className="absolute left-12 top-8 z-[110] bg-appGray-800 rounded-lg shadow-2xl border border-appGray-700 py-1.5 w-[108px] flex flex-col" onClick={(e) => e.stopPropagation()}>
+                                <button className="flex items-center space-x-3 px-4 py-2 hover:bg-appGray-700 text-white text-sm" onClick={(e) => selectStatus('done', e)}>
+                                    <i data-lucide="check" className={`w-4 h-4 ${activeColorClass}`}></i>
+                                    <span>완료</span>
+                                </button>
+                                <button className="flex items-center space-x-3 px-4 py-2 hover:bg-appGray-700 text-white text-sm" onClick={(e) => selectStatus('in-progress', e)}>
+                                    <i data-lucide="circle" className={`w-4 h-4 ${activeColorClass}`}></i>
+                                    <span>진행중</span>
+                                </button>
+                                <button className="flex items-center space-x-3 px-4 py-2 hover:bg-appGray-700 text-white text-sm" onClick={(e) => selectStatus('postpone', e)}>
+                                    <i data-lucide="arrow-right" className={`w-4 h-4 ${activeColorClass}`}></i>
+                                    <span>미루기</span>
+                                </button>
+                                <button className="flex items-center space-x-3 px-4 py-2 hover:bg-appGray-700 text-white text-sm" onClick={(e) => selectStatus('cancel', e)}>
+                                    <i data-lucide="x" className={`w-4 h-4 ${activeColorClass}`}></i>
+                                    <span>취소</span>
+                                </button>
+                                <div className="border-t border-appGray-700 my-1"></div>
+                                <button className="flex items-center space-x-3 px-4 py-2 hover:bg-appGray-700 text-appGray-400 text-sm" onClick={(e) => selectStatus('none', e)}>
+                                    <div className="w-4 h-4 border border-appGray-500 rounded-sm"></div>
+                                    <span>비우기</span>
+                                </button>
+                            </div>
+                        </>
+                    )}
+
+                    {/* Options Selection Popup Menu */}
+                    {isOptionsMenuOpen && (
+                        <>
+                            <div className="fixed inset-0 z-[100]" onClick={(e) => { e.stopPropagation(); setIsOptionsMenuOpen(false); }}></div>
+                            <div className="absolute right-6 top-8 z-[110] bg-appGray-800 rounded-lg shadow-2xl border border-appGray-700 py-1 w-[60px] flex flex-col" onClick={(e) => e.stopPropagation()}>
+                                <button className="w-full flex justify-center items-center py-1.5 hover:bg-appGray-700 text-white text-[13px]" onClick={handleEdit}>
+                                    <span>수정</span>
+                                </button>
+                                <div className="border-t border-appGray-700 my-1 w-full"></div>
+                                <button className="w-full flex justify-center items-center py-1.5 hover:bg-appGray-700 text-red-500 text-[13px]" onClick={handleDelete}>
+                                    <span>삭제</span>
+                                </button>
+                            </div>
+                        </>
+                    )}
+                </div>
+            );
+        };
+
+        // 4.5. Inline Task Input
+        const InlineTaskInput = ({ categoryColor, onSave, onCancel }) => {
+            const [text, setText] = useState('');
+            const inputRef = useRef(null);
+
+            useEffect(() => {
+                if (inputRef.current) inputRef.current.focus();
+            }, []);
+
+            const handleKeyDown = (e) => {
+                if (e.key === 'Enter' && text.trim()) {
+                    onSave(text.trim());
+                } else if (e.key === 'Escape') {
+                    onCancel();
+                }
+            };
+
+            return (
+                <div className="flex items-center space-x-4 px-6 py-3 animate-fade-in">
+                    <div className="flex-shrink-0">
+                        <SquareIcon bgClass="bg-transparent" size="w-6 h-6">
+                            <i data-lucide="plus" className={`w-3.5 h-3.5 ${categoryColor.replace('bg-', 'text-')}`}></i>
+                        </SquareIcon>
+                    </div>
+                    <input
+                        ref={inputRef}
+                        type="text"
+                        value={text}
+                        onChange={(e) => setText(e.target.value)}
+                        onKeyDown={handleKeyDown}
+                        onBlur={() => !text.trim() && onCancel()}
+                        placeholder="할 일을 입력하세요..."
+                        className="bg-transparent border-b border-appGray-700 text-[15px] text-white outline-none w-full py-0.5"
+                    />
+                </div>
+            );
+        };
+
+        // 5. Bottom Navigation
+        const BottomNav = () => (
+            <div className="fixed bottom-0 left-0 right-0 max-w-md mx-auto bg-black bg-opacity-95 backdrop-blur-md border-t border-appGray-900 pb-safe pt-2 px-6 flex justify-between items-center z-50">
+                <div className="flex flex-col items-center space-y-1 w-16 mb-2">
+                    <i data-lucide="home" className="w-6 h-6 text-white" fill="white"></i>
+                    <span className="text-[10px] text-white font-medium">피드</span>
+                </div>
+                <div className="flex flex-col items-center space-y-1 w-16 mb-2">
+                    <i data-lucide="compass" className="w-6 h-6 text-appGray-600"></i>
+                    <span className="text-[10px] text-appGray-600 font-medium">둘러보기</span>
+                </div>
+                <div className="flex flex-col items-center space-y-1 w-16 mb-2 relative">
+                    <div className="relative">
+                        <i data-lucide="bell" className="w-6 h-6 text-appGray-600"></i>
+                        <div className="absolute top-0 right-0 w-2 h-2 bg-red-500 rounded-full outline outline-2 outline-black"></div>
+                    </div>
+                    <span className="text-[10px] text-appGray-600 font-medium">알림</span>
+                </div>
+                <div className="flex flex-col items-center space-y-1 w-16 mb-2">
+                    <i data-lucide="user" className="w-6 h-6 text-appGray-600"></i>
+                    <span className="text-[10px] text-appGray-600 font-medium">My</span>
+                </div>
+            </div>
+        );
+
+        // --- Main App Component ---
+        const App = () => {
+            const [calendarMode, setCalendarMode] = useState('weekly'); // 'weekly' or 'monthly'
+            const [viewDate, setViewDate] = useState(new Date(2026, 2, 2)); // Default to March 2, 2026
+            const [addingToCategory, setAddingToCategory] = useState(null);
+
+            const [todos, setTodos] = useState(() => {
+                const savedTodos = localStorage.getItem('puppyReactTasks');
+                if (savedTodos) {
+                    const parsed = JSON.parse(savedTodos);
+                    // Migration for existing data to use full date format
+                    return parsed.map(t => typeof t.day === 'number' ? { ...t, day: `2026-3-${t.day}` } : t);
+                }
+                return [
+                    { id: 1, text: '물 1L 이상 마시기', category: 'Morning', status: 'none', day: '2026-3-2' },
+                    { id: 2, text: '홍삼 먹기', category: 'Morning', status: 'none', day: '2026-3-2' },
+                    { id: 3, text: '점심, 저녁 잘 챙겨먹기', category: 'Afternoon', status: 'done', day: '2026-3-2' },
+                    { id: 4, text: '영양제 먹기', category: 'Afternoon', status: 'in-progress', day: '2026-3-2' },
+                    { id: 5, text: '자본 최대한 다 읽기', category: 'Evening', status: 'postpone', day: '2026-3-2' },
+                    { id: 501, text: '자본 최대한 다 읽기', category: 'Evening', status: 'none', day: '2026-3-3', originalId: 5 },
+                    { id: 8, text: '3일차 아침 운동', category: 'Morning', status: 'none', day: '2026-3-3' },
+                    { id: 6, text: '폐, 간 PPT + 정리본 + 퀴즐렛', category: 'Evening', status: 'done', day: '2026-3-2' },
+                    { id: 7, text: '효제눅에서 연한 라떼 테이크아웃', category: 'Afternoon', status: 'cancel', day: '2026-3-2' },
+                ];
+            });
+
+            const formatDate = (date) => `${date.getFullYear()}-${date.getMonth() + 1}-${date.getDate()}`;
+            const viewDateKey = formatDate(viewDate);
+
+            const handlePrev = () => {
+                const newDate = new Date(viewDate);
+                if (calendarMode === 'weekly') {
+                    newDate.setDate(viewDate.getDate() - 7);
+                } else {
+                    newDate.setMonth(viewDate.getMonth() - 1);
+                }
+                setViewDate(newDate);
+            };
+
+            const handleNext = () => {
+                const newDate = new Date(viewDate);
+                if (calendarMode === 'weekly') {
+                    newDate.setDate(viewDate.getDate() + 7);
+                } else {
+                    newDate.setMonth(viewDate.getMonth() + 1);
+                }
+                setViewDate(newDate);
+            };
+
+            useEffect(() => {
+                localStorage.setItem('puppyReactTasks', JSON.stringify(todos));
+            }, [todos]);
+
+            const changeStatus = (id, newStatus) => {
+                setTodos(prev => {
+                    const task = prev.find(t => t.id === id);
+                    if (!task) return prev;
+
+                    const oldStatus = task.status;
+                    let newTodos = prev.map(t => t.id === id ? { ...t, status: newStatus } : t);
+
+                    // If postponed, create a copy for the next day
+                    if (newStatus === 'postpone' && oldStatus !== 'postpone') {
+                        const taskDate = new Date(task.day);
+                        taskDate.setDate(taskDate.getDate() + 1);
+                        newTodos.push({
+                            ...task,
+                            id: Date.now() + Math.random(),
+                            day: formatDate(taskDate),
+                            status: 'none',
+                            originalId: task.id
+                        });
+                    }
+
+                    // If postpone is cancelled, remove the copy from the next day
+                    if (oldStatus === 'postpone' && newStatus !== 'postpone') {
+                        newTodos = newTodos.filter(t => t.originalId !== task.id);
+                    }
+
+                    return newTodos;
+                });
+            };
+
+            const editTodo = (id, newText) => {
+                setTodos(todos.map(todo =>
+                    todo.id === id ? { ...todo, text: newText } : todo
+                ));
+            };
+
+            const deleteTodo = (id) => {
+                setTodos(prev => prev.filter(todo => todo.id !== id && todo.originalId !== id));
+            };
+
+            // Lucide icons initialization
+            useEffect(() => {
+                lucide.createIcons();
+            });
+
+            const categories = [
+                { name: 'Routine', colorClass: 'text-white', bgClass: 'text-white' },
+                { name: 'Morning', colorClass: 'text-catMorning', bgClass: 'bg-catMorning' },
+                { name: 'Afternoon', colorClass: 'text-catAfternoon', bgClass: 'bg-catAfternoon' },
+                { name: 'Evening', colorClass: 'text-catEvening', bgClass: 'bg-catEvening' },
+            ];
+
+            return (
+                <div className="max-w-md mx-auto min-h-screen bg-appBlack text-white pb-24 relative select-none overflow-x-hidden">
+                    {/* <ProfileHeader /> User requested to remove this section */}
+
+                    <div className="flex justify-between items-center px-5 pt-8 pb-2">
+                        <div className="flex items-center space-x-2">
+                            <span className="text-xl font-bold">{viewDate.getFullYear()}년 {viewDate.getMonth() + 1}월</span>
+                        </div>
+                        <div className="flex items-center space-x-4">
+                            <button onClick={handlePrev} className="p-1 hover:bg-appGray-800 rounded-full active:opacity-70 transition-colors">
+                                <i data-lucide="chevron-left" className="w-6 h-6 text-white"></i>
+                            </button>
+                            <button onClick={handleNext} className="p-1 hover:bg-appGray-800 rounded-full active:opacity-70 transition-colors">
+                                <i data-lucide="chevron-right" className="w-6 h-6 text-white"></i>
+                            </button>
+                            <button onClick={() => setCalendarMode(calendarMode === 'monthly' ? 'weekly' : 'monthly')} className="bg-appGray-800 rounded-full w-10 h-7 text-[13px] font-bold active:bg-appGray-700 flex items-center justify-center">
+                                {calendarMode === 'weekly' ? '주' : '월'}
+                            </button>
+                        </div>
+                    </div>
+
+                    {calendarMode === 'monthly' ? (
+                        <MonthlyCalendar onSwipeUp={() => setCalendarMode('weekly')} viewDate={viewDate} onSelectDay={setViewDate} />
+                    ) : (
+                        <WeeklyCalendar onSwipeDown={() => setCalendarMode('monthly')} viewDate={viewDate} onSelectDay={setViewDate} />
+                    )}
+
+                    <div className="mt-2 space-y-6">
+                        {categories.map(cat => {
+                            const catTodos = todos.filter(t => t.category === cat.name && t.day === viewDateKey);
+
+                            return (
+                                <div key={cat.name}>
+                                    <TodoCategory
+                                        title={cat.name}
+                                        colorClass={cat.colorClass}
+                                        onAdd={() => setAddingToCategory(cat.name)}
+                                    />
+                                    <div className="mt-2">
+                                        {addingToCategory === cat.name && (
+                                            <InlineTaskInput
+                                                categoryColor={cat.bgClass}
+                                                onSave={(text) => {
+                                                    setTodos(prev => [...prev, {
+                                                        id: Date.now(),
+                                                        text: text,
+                                                        category: cat.name,
+                                                        status: 'none',
+                                                        day: viewDateKey
+                                                    }]);
+                                                    setAddingToCategory(null);
+                                                }}
+                                                onCancel={() => setAddingToCategory(null)}
+                                            />
+                                        )}
+                                        {catTodos.map(todo => (
+                                            <TodoItem
+                                                key={todo.id}
+                                                text={todo.text}
+                                                categoryColor={cat.bgClass}
+                                                isChecked={todo.status === 'done'}
+                                                status={todo.status}
+                                                onToggle={(e) => { e.stopPropagation(); }} // Prevent container click from bubbling up randomly
+                                                onStatusChange={(newStatus) => changeStatus(todo.id, newStatus)}
+                                                onEdit={(newText) => {
+                                                    editTodo(todo.id, newText);
+                                                }}
+                                                onDelete={() => {
+                                                    if (confirm('정말로 이 할 일을 삭제하시겠습니까?')) {
+                                                        deleteTodo(todo.id);
+                                                    }
+                                                }}
+                                            />
+                                        ))}
+                                    </div>
+                                </div>
+                            );
+                        })}
+                    </div>
+
+                </div>
+            );
+        };
+
+        const root = ReactDOM.createRoot(document.getElementById('root'));
+        root.render(<App />);
+    </script>
+</body>
+
+</html>
