@@ -550,19 +550,25 @@
                 const savedTodos = localStorage.getItem('puppyReactTasks');
                 if (savedTodos) {
                     const parsed = JSON.parse(savedTodos);
-                    // Migration for existing data to use full date format
-                    return parsed.map(t => typeof t.day === 'number' ? { ...t, day: `2026-3-${t.day}` } : t);
+                    // Migration: Ensure routines have startDate and statuses map
+                    return parsed.map(t => {
+                        if (t.category === 'Routine' && !t.statuses) {
+                            return { ...t, startDate: t.day || '2026-3-2', statuses: {} };
+                        }
+                        return t.startDate ? t : { ...t, startDate: t.day };
+                    });
                 }
                 return [
-                    { id: 1, text: '물 1L 이상 마시기', category: 'Morning', status: 'none', day: '2026-3-2' },
-                    { id: 2, text: '홍삼 먹기', category: 'Morning', status: 'none', day: '2026-3-2' },
-                    { id: 3, text: '점심, 저녁 잘 챙겨먹기', category: 'Afternoon', status: 'done', day: '2026-3-2' },
-                    { id: 4, text: '영양제 먹기', category: 'Afternoon', status: 'in-progress', day: '2026-3-2' },
-                    { id: 5, text: '자본 최대한 다 읽기', category: 'Evening', status: 'postpone', day: '2026-3-2' },
-                    { id: 501, text: '자본 최대한 다 읽기', category: 'Evening', status: 'none', day: '2026-3-3', originalId: 5 },
-                    { id: 8, text: '3일차 아침 운동', category: 'Morning', status: 'none', day: '2026-3-3' },
-                    { id: 6, text: '폐, 간 PPT + 정리본 + 퀴즐렛', category: 'Evening', status: 'done', day: '2026-3-2' },
-                    { id: 7, text: '효제눅에서 연한 라떼 테이크아웃', category: 'Afternoon', status: 'cancel', day: '2026-3-2' },
+                    { id: 100, text: '아침 기상 후 물 한잔', category: 'Routine', startDate: '2026-3-2', statuses: {} },
+                    { id: 1, text: '물 1L 이상 마시기', category: 'Morning', startDate: '2026-3-2', status: 'none' },
+                    { id: 2, text: '홍삼 먹기', category: 'Morning', startDate: '2026-3-2', status: 'none' },
+                    { id: 3, text: '점심, 저녁 잘 챙겨먹기', category: 'Afternoon', startDate: '2026-3-2', status: 'done' },
+                    { id: 4, text: '영양제 먹기', category: 'Afternoon', startDate: '2026-3-2', status: 'in-progress' },
+                    { id: 5, text: '자본 최대한 다 읽기', category: 'Evening', startDate: '2026-3-2', status: 'postpone' },
+                    { id: 501, text: '자본 최대한 다 읽기', category: 'Evening', startDate: '2026-3-3', status: 'none', originalId: 5 },
+                    { id: 8, text: '3일차 아침 운동', category: 'Morning', startDate: '2026-3-3', status: 'none' },
+                    { id: 6, text: '폐, 간 PPT + 정리본 + 퀴즐렛', category: 'Evening', startDate: '2026-3-2', status: 'done' },
+                    { id: 7, text: '효제눅에서 연한 라떼 테이크아웃', category: 'Afternoon', startDate: '2026-3-2', status: 'cancel' },
                 ];
             });
 
@@ -598,17 +604,32 @@
                     const task = prev.find(t => t.id === id);
                     if (!task) return prev;
 
+                    if (task.category === 'Routine') {
+                        return prev.map(t => {
+                            if (t.id === id) {
+                                return {
+                                    ...t,
+                                    statuses: {
+                                        ...(t.statuses || {}),
+                                        [viewDateKey]: newStatus
+                                    }
+                                };
+                            }
+                            return t;
+                        });
+                    }
+
                     const oldStatus = task.status;
                     let newTodos = prev.map(t => t.id === id ? { ...t, status: newStatus } : t);
 
                     // If postponed, create a copy for the next day
                     if (newStatus === 'postpone' && oldStatus !== 'postpone') {
-                        const taskDate = new Date(task.day);
+                        const taskDate = new Date(task.startDate);
                         taskDate.setDate(taskDate.getDate() + 1);
                         newTodos.push({
                             ...task,
                             id: Date.now() + Math.random(),
-                            day: formatDate(taskDate),
+                            startDate: formatDate(taskDate),
                             status: 'none',
                             originalId: task.id
                         });
@@ -630,7 +651,15 @@
             };
 
             const deleteTodo = (id) => {
-                setTodos(prev => prev.filter(todo => todo.id !== id && todo.originalId !== id));
+                setTodos(prev => {
+                    const task = prev.find(t => t.id === id);
+                    if (task && task.category === 'Routine') {
+                        // For routines, don't delete from past, just set endDate
+                        return prev.map(t => t.id === id ? { ...t, endDate: viewDateKey } : t);
+                    }
+                    // For other categories, full deletion
+                    return prev.filter(todo => todo.id !== id && todo.originalId !== id);
+                });
             };
 
             // Lucide icons initialization
@@ -674,7 +703,20 @@
 
                     <div className="mt-2 space-y-6">
                         {categories.map(cat => {
-                            const catTodos = todos.filter(t => t.category === cat.name && t.day === viewDateKey);
+                            const catTodos = todos.filter(t => {
+                                if (t.category !== cat.name) return false;
+
+                                if (t.category === 'Routine') {
+                                    const start = new Date(t.startDate);
+                                    const current = new Date(viewDateKey);
+                                    const end = t.endDate ? new Date(t.endDate) : null;
+
+                                    // Must be on or after startDate, and before endDate if set
+                                    return current >= start && (!end || current < end);
+                                }
+
+                                return t.startDate === viewDateKey;
+                            });
 
                             return (
                                 <div key={cat.name}>
@@ -692,33 +734,43 @@
                                                         id: Date.now(),
                                                         text: text,
                                                         category: cat.name,
-                                                        status: 'none',
-                                                        day: viewDateKey
+                                                        status: cat.name === 'Routine' ? undefined : 'none',
+                                                        startDate: viewDateKey,
+                                                        statuses: cat.name === 'Routine' ? {} : undefined
                                                     }]);
                                                     setAddingToCategory(null);
                                                 }}
                                                 onCancel={() => setAddingToCategory(null)}
                                             />
                                         )}
-                                        {catTodos.map(todo => (
-                                            <TodoItem
-                                                key={todo.id}
-                                                text={todo.text}
-                                                categoryColor={cat.bgClass}
-                                                isChecked={todo.status === 'done'}
-                                                status={todo.status}
-                                                onToggle={(e) => { e.stopPropagation(); }} // Prevent container click from bubbling up randomly
-                                                onStatusChange={(newStatus) => changeStatus(todo.id, newStatus)}
-                                                onEdit={(newText) => {
-                                                    editTodo(todo.id, newText);
-                                                }}
-                                                onDelete={() => {
-                                                    if (confirm('정말로 이 할 일을 삭제하시겠습니까?')) {
-                                                        deleteTodo(todo.id);
-                                                    }
-                                                }}
-                                            />
-                                        ))}
+                                        {catTodos.map(todo => {
+                                            const currentStatus = todo.category === 'Routine'
+                                                ? (todo.statuses[viewDateKey] || 'none')
+                                                : todo.status;
+
+                                            return (
+                                                <TodoItem
+                                                    key={todo.id}
+                                                    text={todo.text}
+                                                    categoryColor={cat.bgClass}
+                                                    isChecked={currentStatus === 'done'}
+                                                    status={currentStatus}
+                                                    onToggle={(e) => { e.stopPropagation(); }}
+                                                    onStatusChange={(newStatus) => changeStatus(todo.id, newStatus)}
+                                                    onEdit={(newText) => {
+                                                        editTodo(todo.id, newText);
+                                                    }}
+                                                    onDelete={() => {
+                                                        const msg = todo.category === 'Routine'
+                                                            ? '이 루틴을 오늘부터 중단하시겠습니까? (과거 기록은 유지됩니다)'
+                                                            : '정말로 이 할 일을 삭제하시겠습니까?';
+                                                        if (confirm(msg)) {
+                                                            deleteTodo(todo.id);
+                                                        }
+                                                    }}
+                                                />
+                                            );
+                                        })}
                                     </div>
                                 </div>
                             );
