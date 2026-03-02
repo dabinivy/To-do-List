@@ -319,12 +319,12 @@
 
             return (
                 <div
-                    className={`flex flex-col rounded-b-lg border-b-2 transition-colors ${isDragOverCategory ? 'border-white' : 'border-transparent'}`}
+                    className={`flex flex-col rounded-b-lg border-b transition-colors ${isDragOverCategory ? 'border-white' : 'border-transparent'}`}
                     onDragOver={handleDragOver}
                     onDragLeave={handleDragLeave}
                     onDrop={handleDrop}
                 >
-                    <div className="flex items-center px-6 py-2 mt-4">
+                    <div className="flex items-center px-6 py-1 mt-1">
                         <div className="flex items-center justify-between bg-appGray-800 rounded-full pl-3 pr-1 py-1 space-x-2 min-w-[120px]">
                             <div className="flex items-center space-x-2 pl-1 pr-2 py-0.5">
                                 {title === 'Routine' && <i data-lucide="repeat" className="w-4 h-4 text-white"></i>}
@@ -342,7 +342,7 @@
                         </div>
                     </div>
                     {/* Render children (tasks) here inside the droppable area */}
-                    <div className="mt-2 min-h-[40px] pb-6">
+                    <div className="mt-1 min-h-[30px] pb-1">
                         {children}
                     </div>
                 </div>
@@ -447,7 +447,7 @@
 
             return (
                 <div
-                    className={`flex items-center justify-between px-6 py-3 cursor-pointer group relative ${isDragged ? 'opacity-50' : ''} ${isDragOver ? 'border-t-2 border-white' : 'border-t-2 border-transparent'}`}
+                    className={`flex items-center justify-between px-6 py-1.5 cursor-pointer group relative ${isDragged ? 'opacity-50' : ''} ${isDragOver ? 'border-t border-white' : 'border-t border-transparent'}`}
                     draggable={draggable}
                     onDragStart={(e) => draggable && onDragStart(e, id)}
                     onDragOver={(e) => {
@@ -560,7 +560,7 @@
             };
 
             return (
-                <div className="flex items-center space-x-4 px-6 py-3 animate-fade-in">
+                <div className="flex items-center space-x-4 px-6 py-1.5 animate-fade-in">
                     <div className="flex-shrink-0">
                         <SquareIcon bgClass="bg-transparent" size="w-6 h-6">
                             <i data-lucide="plus" className={`w-3.5 h-3.5 ${categoryColor.replace('bg-', 'text-')}`}></i>
@@ -869,7 +869,7 @@
                         <WeeklyCalendar onSwipeDown={() => setCalendarMode('monthly')} viewDate={viewDate} onSelectDay={setViewDate} />
                     )}
 
-                    <div className="mt-2 space-y-6">
+                    <div className="mt-1 space-y-1">
                         {categories.map(cat => {
                             const catTodos = todos.filter(t => {
                                 if (t.category !== cat.name) return false;
