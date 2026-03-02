@@ -19,8 +19,19 @@
     <!-- Lucide Icons -->
     <script src="https://unpkg.com/lucide@latest"></script>
 
+    <!-- Mobile Drag Drop Polyfill -->
+    <script src="https://unpkg.com/mobile-drag-drop/index.min.js"></script>
+    <script src="https://unpkg.com/mobile-drag-drop/scroll-behaviour.min.js"></script>
+    <link rel="stylesheet" href="https://unpkg.com/mobile-drag-drop/default.css" />
+
     <!-- Tailwind Config -->
     <script>
+        // Optional: Polyfill configuration
+        MobileDragDrop.polyfill({
+            holdToDrag: 500, // 500ms long press to drag
+            dragImageCenterOnTouch: true
+        });
+
         tailwind.config = {
             darkMode: 'class',
             theme: {
@@ -285,29 +296,64 @@
             );
         };
 
-        // 3. Category Header
-        const TodoCategory = ({ title, onAdd }) => (
-            <div className="flex items-center px-6 py-2 mt-4">
-                <div className="flex items-center justify-between bg-appGray-800 rounded-full pl-3 pr-1 py-1 space-x-2 min-w-[120px]">
-                    <div className="flex items-center space-x-2 pl-1 pr-2 py-0.5">
-                        {title === 'Routine' && <i data-lucide="repeat" className="w-4 h-4 text-white"></i>}
-                        {title === 'Morning' && <i data-lucide="sun" className="w-4 h-4 text-catMorning"></i>}
-                        {title === 'Afternoon' && <i data-lucide="clover" className="w-4 h-4 text-catAfternoon"></i>}
-                        {title === 'Evening' && <i data-lucide="moon" className="w-4 h-4 text-catEvening"></i>}
-                        <span className="text-sm font-bold text-white">{title}</span>
+        // 3. Category Header & Container
+        const TodoCategory = ({ title, colorClass, onAdd, children, onDropCategory, isDragOverCategory, onDragOverCategory, onDragLeaveCategory }) => {
+            const handleDragOver = (e) => {
+                if (title === 'Routine') return;
+                e.preventDefault(); // Necessary to allow dropping
+                if (onDragOverCategory) onDragOverCategory(title);
+            };
+
+            const handleDragLeave = (e) => {
+                if (title === 'Routine') return;
+                if (onDragLeaveCategory) onDragLeaveCategory();
+            };
+
+            const handleDrop = (e) => {
+                if (title === 'Routine') return;
+                e.preventDefault();
+                onDropCategory(title);
+            };
+
+            return (
+                <div
+                    className={`flex flex-col rounded-b-lg border-b-2 transition-colors ${isDragOverCategory ? 'border-white' : 'border-transparent'}`}
+                    onDragOver={handleDragOver}
+                    onDragLeave={handleDragLeave}
+                    onDrop={handleDrop}
+                >
+                    <div className="flex items-center px-6 py-2 mt-4">
+                        <div className="flex items-center justify-between bg-appGray-800 rounded-full pl-3 pr-1 py-1 space-x-2 min-w-[120px]">
+                            <div className="flex items-center space-x-2 pl-1 pr-2 py-0.5">
+                                {title === 'Routine' && <i data-lucide="repeat" className="w-4 h-4 text-white"></i>}
+                                {title === 'Morning' && <i data-lucide="sun" className="w-4 h-4 text-catMorning"></i>}
+                                {title === 'Afternoon' && <i data-lucide="clover" className="w-4 h-4 text-catAfternoon"></i>}
+                                {title === 'Evening' && <i data-lucide="moon" className="w-4 h-4 text-catEvening"></i>}
+                                <span className="text-sm font-bold text-white">{title}</span>
+                            </div>
+                            <button
+                                onClick={(e) => { e.stopPropagation(); onAdd && onAdd(); }}
+                                className="w-7 h-7 rounded-full bg-appGray-700 flex items-center justify-center active:bg-appGray-600 transition-colors"
+                            >
+                                <i data-lucide="plus" className="w-4 h-4 text-white"></i>
+                            </button>
+                        </div>
                     </div>
-                    <button
-                        onClick={(e) => { e.stopPropagation(); onAdd && onAdd(); }}
-                        className="w-7 h-7 rounded-full bg-appGray-700 flex items-center justify-center active:bg-appGray-600 transition-colors"
-                    >
-                        <i data-lucide="plus" className="w-4 h-4 text-white"></i>
-                    </button>
+                    {/* Render children (tasks) here inside the droppable area */}
+                    <div className="mt-2 min-h-[40px] pb-6">
+                        {children}
+                    </div>
                 </div>
-            </div>
-        );
+            );
+        };
 
         // 4. Todo Item
-        const TodoItem = ({ text, categoryColor, status, onStatusChange, onEdit, onDelete }) => {
+        const TodoItem = ({
+            id, text, categoryColor, status,
+            onStatusChange, onEdit, onDelete,
+            draggable, isDragged, isDragOver,
+            onDragStart, onDragOver, onDrop, onDragEnd
+        }) => {
             const [isMenuOpen, setIsMenuOpen] = useState(false);
             const [isOptionsMenuOpen, setIsOptionsMenuOpen] = useState(false);
             const [isEditing, setIsEditing] = useState(false);
@@ -398,7 +444,24 @@
             };
 
             return (
-                <div className="flex items-center justify-between px-6 py-3 cursor-pointer group relative">
+                <div
+                    className={`flex items-center justify-between px-6 py-3 cursor-pointer group relative ${isDragged ? 'opacity-50' : ''} ${isDragOver ? 'border-t-2 border-white' : 'border-t-2 border-transparent'}`}
+                    draggable={draggable}
+                    onDragStart={(e) => draggable && onDragStart(e, id)}
+                    onDragOver={(e) => {
+                        if (draggable) {
+                            e.preventDefault();
+                            onDragOver(e, id);
+                        }
+                    }}
+                    onDrop={(e) => {
+                        if (draggable) {
+                            e.preventDefault();
+                            onDrop(e, id);
+                        }
+                    }}
+                    onDragEnd={onDragEnd}
+                >
                     <div className="flex items-center space-x-4 flex-1">
                         <div className="transition-transform duration-200 active:scale-95 flex-shrink-0" onClick={handleIconClick}>
                             <SquareIcon bgClass="bg-transparent" size="w-6 h-6">
@@ -546,6 +609,12 @@
             const [viewDate, setViewDate] = useState(new Date(2026, 2, 2)); // Default to March 2, 2026
             const [addingToCategory, setAddingToCategory] = useState(null);
 
+            // Drag and Drop State
+            const [draggedItemIdx, setDraggedItemIdx] = useState(null);
+            const [draggedItemId, setDraggedItemId] = useState(null);
+            const [dragOverItemId, setDragOverItemId] = useState(null);
+            const [dragOverCategoryName, setDragOverCategoryName] = useState(null);
+
             const [todos, setTodos] = useState(() => {
                 const savedTodos = localStorage.getItem('puppyReactTasks');
                 if (savedTodos) {
@@ -662,6 +731,103 @@
                 });
             };
 
+            // --- Drag and Drop Handlers ---
+            const handleDragStart = (e, id) => {
+                const idx = todos.findIndex(t => t.id === id);
+                setDraggedItemIdx(idx);
+                setDraggedItemId(id);
+                // Required for Firefox
+                e.dataTransfer.effectAllowed = 'move';
+                e.dataTransfer.setData('text/plain', id);
+            };
+
+            const handleDragOver = (e, targetId) => {
+                e.preventDefault(); // Necessary to allow dropping
+                e.stopPropagation(); // Stop event from bubbling to category
+                setDragOverCategoryName(null);
+                if (draggedItemId === targetId) return;
+                setDragOverItemId(targetId);
+            };
+
+            const handleDragOverCategory = (categoryName) => {
+                setDragOverItemId(null);
+                setDragOverCategoryName(categoryName);
+            };
+
+            const handleDragLeaveCategory = () => {
+                setDragOverCategoryName(null);
+            };
+
+            const handleDropOnItem = (e, targetId) => {
+                e.preventDefault();
+                setDragOverItemId(null);
+
+                if (draggedItemId === null || draggedItemId === targetId) return;
+
+                const newTodos = [...todos];
+                const draggedIdx = newTodos.findIndex(t => t.id === draggedItemId);
+                const targetIdx = newTodos.findIndex(t => t.id === targetId);
+
+                if (draggedIdx === -1 || targetIdx === -1) return;
+
+                const draggedTask = newTodos[draggedIdx];
+                const targetTask = newTodos[targetIdx];
+
+                // Remove dragged item
+                newTodos.splice(draggedIdx, 1);
+
+                // Update category if crossed
+                if (draggedTask.category !== targetTask.category) {
+                    draggedTask.category = targetTask.category;
+                }
+
+                // Insert before the target
+                const newTargetIdx = newTodos.findIndex(t => t.id === targetId);
+                newTodos.splice(newTargetIdx, 0, draggedTask);
+
+                setTodos(newTodos);
+                setDraggedItemId(null);
+                setDraggedItemIdx(null);
+            };
+
+            const handleDropOnCategory = (categoryName) => {
+                setDragOverCategoryName(null);
+                if (draggedItemId === null || categoryName === 'Routine') return;
+
+                const newTodos = [...todos];
+                const draggedIdx = newTodos.findIndex(t => t.id === draggedItemId);
+
+                if (draggedIdx === -1) return;
+
+                const draggedTask = newTodos[draggedIdx];
+
+                // Remove dragged item from its current position
+                newTodos.splice(draggedIdx, 1);
+
+                // Ensure the category is updated if it crossed categories
+                draggedTask.category = categoryName;
+
+                // Put it at the end of the lists for this day and category
+                const lastIdxInCategory = newTodos.findLastIndex(t => t.category === categoryName && t.startDate === viewDateKey);
+                if (lastIdxInCategory !== -1) {
+                    newTodos.splice(lastIdxInCategory + 1, 0, draggedTask);
+                } else {
+                    // If category is completely empty today, just append
+                    newTodos.push(draggedTask);
+                }
+
+                setTodos(newTodos);
+                setDraggedItemId(null);
+                setDraggedItemIdx(null);
+            };
+
+            const handleDragEnd = () => {
+                setDraggedItemId(null);
+                setDraggedItemIdx(null);
+                setDragOverItemId(null);
+                setDragOverCategoryName(null);
+            };
+
             // Lucide icons initialization
             useEffect(() => {
                 lucide.createIcons();
@@ -719,60 +885,70 @@
                             });
 
                             return (
-                                <div key={cat.name}>
-                                    <TodoCategory
-                                        title={cat.name}
-                                        colorClass={cat.colorClass}
-                                        onAdd={() => setAddingToCategory(cat.name)}
-                                    />
-                                    <div className="mt-2">
-                                        {addingToCategory === cat.name && (
-                                            <InlineTaskInput
-                                                categoryColor={cat.bgClass}
-                                                onSave={(text) => {
-                                                    setTodos(prev => [...prev, {
-                                                        id: Date.now(),
-                                                        text: text,
-                                                        category: cat.name,
-                                                        status: cat.name === 'Routine' ? undefined : 'none',
-                                                        startDate: viewDateKey,
-                                                        statuses: cat.name === 'Routine' ? {} : undefined
-                                                    }]);
-                                                    setAddingToCategory(null);
-                                                }}
-                                                onCancel={() => setAddingToCategory(null)}
-                                            />
-                                        )}
-                                        {catTodos.map(todo => {
-                                            const currentStatus = todo.category === 'Routine'
-                                                ? (todo.statuses[viewDateKey] || 'none')
-                                                : todo.status;
+                                <TodoCategory
+                                    key={cat.name}
+                                    title={cat.name}
+                                    colorClass={cat.colorClass}
+                                    onAdd={() => setAddingToCategory(cat.name)}
+                                    onDropCategory={handleDropOnCategory}
+                                    isDragOverCategory={dragOverCategoryName === cat.name}
+                                    onDragOverCategory={handleDragOverCategory}
+                                    onDragLeaveCategory={handleDragLeaveCategory}
+                                >
+                                    {addingToCategory === cat.name && (
+                                        <InlineTaskInput
+                                            categoryColor={cat.bgClass}
+                                            onSave={(text) => {
+                                                setTodos(prev => [...prev, {
+                                                    id: Date.now(),
+                                                    text: text,
+                                                    category: cat.name,
+                                                    status: cat.name === 'Routine' ? undefined : 'none',
+                                                    startDate: viewDateKey,
+                                                    statuses: cat.name === 'Routine' ? {} : undefined
+                                                }]);
+                                                setAddingToCategory(null);
+                                            }}
+                                            onCancel={() => setAddingToCategory(null)}
+                                        />
+                                    )}
+                                    {catTodos.map(todo => {
+                                        const currentStatus = todo.category === 'Routine'
+                                            ? (todo.statuses[viewDateKey] || 'none')
+                                            : todo.status;
 
-                                            return (
-                                                <TodoItem
-                                                    key={todo.id}
-                                                    text={todo.text}
-                                                    categoryColor={cat.bgClass}
-                                                    isChecked={currentStatus === 'done'}
-                                                    status={currentStatus}
-                                                    onToggle={(e) => { e.stopPropagation(); }}
-                                                    onStatusChange={(newStatus) => changeStatus(todo.id, newStatus)}
-                                                    onEdit={(newText) => {
-                                                        editTodo(todo.id, newText);
-                                                    }}
-                                                    onDelete={() => {
-                                                        const msg = todo.category === 'Routine'
-                                                            ? '이 루틴을 오늘부터 중단하시겠습니까? (과거 기록은 유지됩니다)'
-                                                            : '정말로 이 할 일을 삭제하시겠습니까?';
-                                                        if (confirm(msg)) {
-                                                            deleteTodo(todo.id);
-                                                        }
-                                                    }}
-                                                />
-                                            );
-                                        })}
-                                    </div>
-                                </div>
+                                        return (
+                                            <TodoItem
+                                                key={todo.id}
+                                                id={todo.id}
+                                                text={todo.text}
+                                                categoryColor={cat.bgClass}
+                                                isChecked={currentStatus === 'done'}
+                                                status={currentStatus}
+                                                draggable={cat.name !== 'Routine'}
+                                                isDragged={draggedItemId === todo.id}
+                                                isDragOver={dragOverItemId === todo.id}
+                                                onDragStart={handleDragStart}
+                                                onDragOver={handleDragOver}
+                                                onDrop={handleDropOnItem}
+                                                onDragEnd={handleDragEnd}
+                                                onToggle={(e) => { e.stopPropagation(); }}
+                                                onStatusChange={(newStatus) => changeStatus(todo.id, newStatus)}
+                                                onEdit={(newText) => {
+                                                    editTodo(todo.id, newText);
+                                                }}
+                                                onDelete={() => {
+                                                    const msg = todo.category === 'Routine'
+                                                        ? '이 루틴을 오늘부터 중단하시겠습니까? (과거 기록은 유지됩니다)'
+                                                        : '정말로 이 할 일을 삭제하시겠습니까?';
+                                                    if (confirm(msg)) {
+                                                        deleteTodo(todo.id);
+                                                    }
+                                                }}
+                                            />
+                                        );
+                                    })}
+                                </TodoCategory>
                             );
                         })}
                     </div>
