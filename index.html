@@ -3,7 +3,7 @@
 
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=0">
     <title>Todo App UI</title>
 
     <!-- React & ReactDOM -->
@@ -762,6 +762,7 @@
 
             const handleDropOnItem = (e, targetId) => {
                 e.preventDefault();
+                e.stopPropagation(); // Stop event from bubbling up to category
                 setDragOverItemId(null);
 
                 if (draggedItemId === null || draggedItemId === targetId) return;
@@ -775,6 +776,9 @@
                 const draggedTask = newTodos[draggedIdx];
                 const targetTask = newTodos[targetIdx];
 
+                // Determine if we are dragging down within the same list
+                const isDraggingDown = draggedIdx < targetIdx;
+
                 // Remove dragged item
                 newTodos.splice(draggedIdx, 1);
 
@@ -783,9 +787,16 @@
                     draggedTask.category = targetTask.category;
                 }
 
-                // Insert before the target
+                // Insert at the correct position
                 const newTargetIdx = newTodos.findIndex(t => t.id === targetId);
-                newTodos.splice(newTargetIdx, 0, draggedTask);
+
+                // If dragging down, we usually want to place it *after* the target item it was dropped on
+                // If dragging up, we place it *before* the target item
+                if (isDraggingDown) {
+                    newTodos.splice(newTargetIdx + 1, 0, draggedTask);
+                } else {
+                    newTodos.splice(newTargetIdx, 0, draggedTask);
+                }
 
                 setTodos(newTodos);
                 setDraggedItemId(null);
@@ -848,7 +859,12 @@
 
                     <div className="flex justify-between items-center px-5 pt-8 pb-2">
                         <div className="flex items-center space-x-2">
-                            <span className="text-xl font-bold">{viewDate.getFullYear()}년 {viewDate.getMonth() + 1}월</span>
+                            <span
+                                className="text-xl font-bold cursor-pointer hover:opacity-80 transition-opacity active:scale-95"
+                                onClick={() => setViewDate(new Date(2026, 2, 2))}
+                            >
+                                {viewDate.getFullYear()}년 {viewDate.getMonth() + 1}월
+                            </span>
                         </div>
                         <div className="flex items-center space-x-4">
                             <button onClick={handlePrev} className="p-1 hover:bg-appGray-800 rounded-full active:opacity-70 transition-colors">
@@ -940,10 +956,12 @@
                                                     editTodo(todo.id, newText);
                                                 }}
                                                 onDelete={() => {
-                                                    const msg = todo.category === 'Routine'
-                                                        ? '이 루틴을 오늘부터 중단하시겠습니까? (과거 기록은 유지됩니다)'
-                                                        : '정말로 이 할 일을 삭제하시겠습니까?';
-                                                    if (confirm(msg)) {
+                                                    if (todo.category === 'Routine') {
+                                                        const msg = '이 루틴을 오늘부터 중단하시겠습니까? (과거 기록은 유지됩니다)';
+                                                        if (confirm(msg)) {
+                                                            deleteTodo(todo.id);
+                                                        }
+                                                    } else {
                                                         deleteTodo(todo.id);
                                                     }
                                                 }}
