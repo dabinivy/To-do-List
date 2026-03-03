@@ -15,6 +15,42 @@
 
     <!-- Tailwind CSS -->
     <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Firebase SDKs -->
+    <script type="module">
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/10.9.0/firebase-app.js";
+        import { getFirestore, collection, onSnapshot, addDoc, updateDoc, deleteDoc, doc, query, where } from "https://www.gstatic.com/firebasejs/10.9.0/firebase-firestore.js";
+        import { getAuth, GoogleAuthProvider, signInWithPopup, signOut, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/10.9.0/firebase-auth.js";
+
+        const firebaseConfig = {
+            apiKey: "AIzaSyBKpQiCW0B30lAsqQCcbj4dzNqqm66eyuc",
+            authDomain: "todolist-ec35b.firebaseapp.com",
+            projectId: "todolist-ec35b",
+            storageBucket: "todolist-ec35b.firebasestorage.app",
+            messagingSenderId: "805920873146",
+            appId: "1:805920873146:web:2c59a3c72998b789db0083"
+        };
+
+        const app = initializeApp(firebaseConfig);
+        const db = getFirestore(app);
+        const auth = getAuth(app);
+
+        // Export to window so React can access it
+        window.db = db;
+        window.collection = collection;
+        window.onSnapshot = onSnapshot;
+        window.addDoc = addDoc;
+        window.updateDoc = updateDoc;
+        window.deleteDoc = deleteDoc;
+        window.doc = doc;
+        window.query = query;
+        window.where = where;
+
+        window.auth = auth;
+        window.GoogleAuthProvider = GoogleAuthProvider;
+        window.signInWithPopup = signInWithPopup;
+        window.signOut = signOut;
+        window.onAuthStateChanged = onAuthStateChanged;
+    </script>
 
     <!-- Lucide Icons -->
     <script src="https://unpkg.com/lucide@latest"></script>
@@ -612,9 +648,9 @@
                     </div>
                     <span className="text-[10px] text-appGray-600 font-medium">알림</span>
                 </div>
-                <div className="flex flex-col items-center space-y-1 w-16 mb-2">
+                <div className="flex flex-col items-center space-y-1 w-16 mb-2 cursor-pointer" onClick={() => window.signOut(window.auth)}>
                     <i data-lucide="user" className="w-6 h-6 text-appGray-600"></i>
-                    <span className="text-[10px] text-appGray-600 font-medium">My</span>
+                    <span className="text-[10px] text-appGray-600 font-medium">로그아웃</span>
                 </div>
             </div>
         );
@@ -701,6 +737,18 @@
 
         // --- Main App Component ---
         const App = () => {
+            const [user, setUser] = useState(null);
+            const [authLoading, setAuthLoading] = useState(true);
+
+            useEffect(() => {
+                if (!window.auth) return;
+                const unsubscribe = window.onAuthStateChanged(window.auth, (currentUser) => {
+                    setUser(currentUser);
+                    setAuthLoading(false);
+                });
+                return () => unsubscribe();
+            }, []);
+
             const [calendarMode, setCalendarMode] = useState('weekly'); // 'weekly' or 'monthly'
             const [viewDate, setViewDate] = useState(new Date(2026, 2, 2)); // Default to March 2, 2026
             const [isDatePickerOpen, setIsDatePickerOpen] = useState(false);
@@ -712,31 +760,34 @@
             const [dragOverItemId, setDragOverItemId] = useState(null);
             const [dragOverCategoryName, setDragOverCategoryName] = useState(null);
 
-            const [todos, setTodos] = useState(() => {
-                const savedTodos = localStorage.getItem('puppyReactTasks');
-                if (savedTodos) {
-                    const parsed = JSON.parse(savedTodos);
-                    // Migration: Ensure routines have startDate and statuses map
-                    return parsed.map(t => {
-                        if (t.category === 'Routine' && !t.statuses) {
-                            return { ...t, startDate: t.day || '2026-3-2', statuses: {} };
-                        }
-                        return t.startDate ? t : { ...t, startDate: t.day };
-                    });
+            const [todos, setTodos] = useState([]);
+
+            // Fetch tasks from Firestore on mount
+            useEffect(() => {
+                if (!window.db || !user) {
+                    setTodos([]);
+                    return;
                 }
-                return [
-                    { id: 100, text: '아침 기상 후 물 한잔', category: 'Routine', startDate: '2026-3-2', statuses: {} },
-                    { id: 1, text: '물 1L 이상 마시기', category: 'Morning', startDate: '2026-3-2', status: 'none' },
-                    { id: 2, text: '홍삼 먹기', category: 'Morning', startDate: '2026-3-2', status: 'none' },
-                    { id: 3, text: '점심, 저녁 잘 챙겨먹기', category: 'Afternoon', startDate: '2026-3-2', status: 'done' },
-                    { id: 4, text: '영양제 먹기', category: 'Afternoon', startDate: '2026-3-2', status: 'in-progress' },
-                    { id: 5, text: '자본 최대한 다 읽기', category: 'Evening', startDate: '2026-3-2', status: 'postpone' },
-                    { id: 501, text: '자본 최대한 다 읽기', category: 'Evening', startDate: '2026-3-3', status: 'none', originalId: 5 },
-                    { id: 8, text: '3일차 아침 운동', category: 'Morning', startDate: '2026-3-3', status: 'none' },
-                    { id: 6, text: '폐, 간 PPT + 정리본 + 퀴즐렛', category: 'Evening', startDate: '2026-3-2', status: 'done' },
-                    { id: 7, text: '효제눅에서 연한 라떼 테이크아웃', category: 'Afternoon', startDate: '2026-3-2', status: 'cancel' },
-                ];
-            });
+
+                const q = window.query(
+                    window.collection(window.db, "tasks"),
+                    window.where("userId", "==", user.uid)
+                );
+                const unsubscribe = window.onSnapshot(q, (snapshot) => {
+                    const fetchedTodos = snapshot.docs.map(doc => {
+                        const data = doc.data();
+
+                        // Migration format safety
+                        if (data.category === 'Routine' && !data.statuses) {
+                            return { id: doc.id, ...data, startDate: data.day || '2026-3-2', statuses: {} };
+                        }
+                        return { id: doc.id, ...data, startDate: data.startDate || data.day };
+                    });
+                    setTodos(fetchedTodos);
+                });
+
+                return () => unsubscribe();
+            }, []);
 
             const formatDate = (date) => `${date.getFullYear()}-${date.getMonth() + 1}-${date.getDate()}`;
             const viewDateKey = formatDate(viewDate);
@@ -761,71 +812,70 @@
                 setViewDate(newDate);
             };
 
-            useEffect(() => {
-                localStorage.setItem('puppyReactTasks', JSON.stringify(todos));
-            }, [todos]);
+            const changeStatus = async (id, newStatus) => {
+                const task = todos.find(t => t.id === id);
+                if (!task) return;
 
-            const changeStatus = (id, newStatus) => {
-                setTodos(prev => {
-                    const task = prev.find(t => t.id === id);
-                    if (!task) return prev;
+                const taskRef = window.doc(window.db, "tasks", String(id));
 
-                    if (task.category === 'Routine') {
-                        return prev.map(t => {
-                            if (t.id === id) {
-                                return {
-                                    ...t,
-                                    statuses: {
-                                        ...(t.statuses || {}),
-                                        [viewDateKey]: newStatus
-                                    }
-                                };
-                            }
-                            return t;
-                        });
-                    }
-
+                if (task.category === 'Routine') {
+                    await window.updateDoc(taskRef, {
+                        statuses: {
+                            ...(task.statuses || {}),
+                            [viewDateKey]: newStatus
+                        }
+                    });
+                } else {
                     const oldStatus = task.status;
-                    let newTodos = prev.map(t => t.id === id ? { ...t, status: newStatus } : t);
+                    await window.updateDoc(taskRef, { status: newStatus });
 
-                    // If postponed, create a copy for the next day
+                    // Handle postpone logic by creating a new document in Firestore
                     if (newStatus === 'postpone' && oldStatus !== 'postpone') {
                         const taskDate = new Date(task.startDate);
                         taskDate.setDate(taskDate.getDate() + 1);
-                        newTodos.push({
-                            ...task,
-                            id: Date.now() + Math.random(),
+                        await window.addDoc(window.collection(window.db, "tasks"), {
+                            text: task.text,
+                            category: task.category,
                             startDate: formatDate(taskDate),
                             status: 'none',
-                            originalId: task.id
+                            originalId: id,
+                            userId: user.uid
                         });
                     }
 
-                    // If postpone is cancelled, remove the copy from the next day
+                    // If postpone is cancelled, find and delete the copy from the next day
                     if (oldStatus === 'postpone' && newStatus !== 'postpone') {
-                        newTodos = newTodos.filter(t => t.originalId !== task.id);
+                        const postponedCopy = todos.find(t => t.originalId === id);
+                        if (postponedCopy) {
+                            await window.deleteDoc(window.doc(window.db, "tasks", String(postponedCopy.id)));
+                        }
                     }
-
-                    return newTodos;
-                });
+                }
             };
 
-            const editTodo = (id, newText) => {
-                setTodos(todos.map(todo =>
-                    todo.id === id ? { ...todo, text: newText } : todo
-                ));
+            const editTodo = async (id, newText) => {
+                const taskRef = window.doc(window.db, "tasks", String(id));
+                await window.updateDoc(taskRef, { text: newText });
             };
 
-            const deleteTodo = (id) => {
-                setTodos(prev => {
-                    const task = prev.find(t => t.id === id);
-                    if (task && task.category === 'Routine') {
-                        // For routines, don't delete from past, just set endDate
-                        return prev.map(t => t.id === id ? { ...t, endDate: viewDateKey } : t);
+            const deleteTodo = async (id) => {
+                const task = todos.find(t => t.id === id);
+                if (!task) return;
+
+                const taskRef = window.doc(window.db, "tasks", String(id));
+
+                if (task.category === 'Routine') {
+                    // For routines, just set endDate
+                    await window.updateDoc(taskRef, { endDate: viewDateKey });
+                } else {
+                    // Full deletion + cleanup copies
+                    await window.deleteDoc(taskRef);
+
+                    const copies = todos.filter(t => t.originalId === id);
+                    for (const copy of copies) {
+                        await window.deleteDoc(window.doc(window.db, "tasks", String(copy.id)));
                     }
-                    // For other categories, full deletion
-                    return prev.filter(todo => todo.id !== id && todo.originalId !== id);
-                });
+                }
             };
 
             // --- Drag and Drop Handlers ---
@@ -882,18 +932,20 @@
                     draggedTask.category = targetTask.category;
                 }
 
-                // Insert at the correct position
+                // Insert at the correct position locally (optimistic)
                 const newTargetIdx = newTodos.findIndex(t => t.id === targetId);
-
-                // If dragging down, we usually want to place it *after* the target item it was dropped on
-                // If dragging up, we place it *before* the target item
                 if (isDraggingDown) {
                     newTodos.splice(newTargetIdx + 1, 0, draggedTask);
                 } else {
                     newTodos.splice(newTargetIdx, 0, draggedTask);
                 }
 
-                setTodos(newTodos);
+                setTodos(newTodos); // Optimistic UI update
+
+                // Update Firestore
+                window.updateDoc(window.doc(window.db, "tasks", String(draggedItemId)), {
+                    category: draggedTask.category
+                }).catch(err => console.error("Error updating drag drop:", err));
                 setDraggedItemId(null);
                 setDraggedItemIdx(null);
             };
@@ -924,7 +976,12 @@
                     newTodos.push(draggedTask);
                 }
 
-                setTodos(newTodos);
+                setTodos(newTodos); // Optimistic UI update
+
+                // Update Firestore
+                window.updateDoc(window.doc(window.db, "tasks", String(draggedItemId)), {
+                    category: categoryName
+                }).catch(err => console.error("Error updating category drop:", err));
                 setDraggedItemId(null);
                 setDraggedItemIdx(null);
             };
@@ -947,6 +1004,41 @@
                 { name: 'Afternoon', colorClass: 'text-catAfternoon', bgClass: 'bg-catAfternoon' },
                 { name: 'Evening', colorClass: 'text-catEvening', bgClass: 'bg-catEvening' },
             ];
+
+            if (authLoading) {
+                return (
+                    <div className="max-w-md mx-auto min-h-screen bg-appBlack text-white flex items-center justify-center">
+                        <div className="animate-pulse text-appGray-400">로딩 중...</div>
+                    </div>
+                );
+            }
+
+            if (!user) {
+                return (
+                    <div className="max-w-md mx-auto min-h-screen bg-appBlack text-white flex flex-col items-center justify-center p-6">
+                        <h1 className="text-3xl font-bold mb-4">ToDo</h1>
+                        <p className="text-appGray-400 text-center mb-12">나만의 할 일을 체계적으로 관리하세요</p>
+
+                        <button
+                            onClick={() => {
+                                const provider = new window.GoogleAuthProvider();
+                                window.signInWithPopup(window.auth, provider).catch(error => {
+                                    alert("로그인 실패: " + error.message);
+                                });
+                            }}
+                            className="bg-white text-black font-bold py-3 px-6 rounded-full flex items-center space-x-3 hover:bg-gray-100 transition-colors active:scale-95"
+                        >
+                            <svg className="w-5 h-5" viewBox="0 0 24 24">
+                                <path d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z" fill="#4285F4" />
+                                <path d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z" fill="#34A853" />
+                                <path d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z" fill="#FBBC05" />
+                                <path d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z" fill="#EA4335" />
+                            </svg>
+                            <span>Google 계정으로 로그인</span>
+                        </button>
+                    </div>
+                );
+            }
 
             return (
                 <div className="max-w-md mx-auto min-h-screen bg-appBlack text-white pb-24 relative select-none overflow-x-hidden">
@@ -1064,26 +1156,20 @@
                                                 {addingToCategory.category === cat.name && addingToCategory.afterId === todo.id && (
                                                     <InlineTaskInput
                                                         categoryColor={cat.bgClass}
-                                                        onSave={(text) => {
+                                                        onSave={async (text) => {
                                                             const newTask = {
-                                                                id: Date.now(),
                                                                 text: text,
                                                                 category: cat.name,
                                                                 status: cat.name === 'Routine' ? undefined : 'none',
                                                                 startDate: viewDateKey,
-                                                                statuses: cat.name === 'Routine' ? {} : undefined
+                                                                userId: user.uid
                                                             };
-                                                            setTodos(prev => {
-                                                                const newTodos = [...prev];
-                                                                const insertIdx = newTodos.findIndex(t => t.id === todo.id);
-                                                                if (insertIdx !== -1) {
-                                                                    newTodos.splice(insertIdx + 1, 0, newTask);
-                                                                } else {
-                                                                    newTodos.push(newTask);
-                                                                }
-                                                                return newTodos;
-                                                            });
-                                                            setAddingToCategory({ category: cat.name, afterId: newTask.id });
+                                                            if (cat.name === 'Routine') {
+                                                                newTask.statuses = {};
+                                                            }
+
+                                                            const docRef = await window.addDoc(window.collection(window.db, "tasks"), newTask);
+                                                            setAddingToCategory({ category: cat.name, afterId: docRef.id });
                                                         }}
                                                         onCancel={() => setAddingToCategory({ category: null, afterId: null })}
                                                     />
@@ -1094,16 +1180,19 @@
                                     {addingToCategory.category === cat.name && addingToCategory.afterId === null && (
                                         <InlineTaskInput
                                             categoryColor={cat.bgClass}
-                                            onSave={(text) => {
+                                            onSave={async (text) => {
                                                 const newTask = {
-                                                    id: Date.now(),
                                                     text: text,
                                                     category: cat.name,
                                                     status: cat.name === 'Routine' ? undefined : 'none',
                                                     startDate: viewDateKey,
-                                                    statuses: cat.name === 'Routine' ? {} : undefined
+                                                    userId: user.uid
                                                 };
-                                                setTodos(prev => [...prev, newTask]);
+                                                if (cat.name === 'Routine') {
+                                                    newTask.statuses = {};
+                                                }
+
+                                                await window.addDoc(window.collection(window.db, "tasks"), newTask);
                                                 // Keep adding at the bottom
                                             }}
                                             onCancel={() => setAddingToCategory({ category: null, afterId: null })}
