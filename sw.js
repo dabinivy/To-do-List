@@ -1,11 +1,11 @@
-const CACHE_NAME = 'todo-cache-v7';
+const CACHE_NAME = 'todo-cache-v8';
 const urlsToCache = [
   './',
   './index.html'
 ];
 
 self.addEventListener('install', event => {
-  self.skipWaiting(); // Force the new service worker to activate immediately
+  self.skipWaiting();
   event.waitUntil(
     caches.open(CACHE_NAME)
       .then(cache => {
@@ -20,21 +20,24 @@ self.addEventListener('activate', event => {
       return Promise.all(
         cacheNames.map(cacheName => {
           if (cacheName !== CACHE_NAME) {
-            // Delete old caches
             return caches.delete(cacheName);
           }
         })
       );
     })
   );
-  self.clients.claim(); // Take control of all pages immediately
+  self.clients.claim();
 });
 
 self.addEventListener('fetch', event => {
+  // Only cache GET requests and same-origin requests
+  if (event.request.method !== 'GET' || !event.request.url.startsWith(self.location.origin)) {
+    return; // Let the browser handle Firebase Auth, Firestore, and POST requests natively
+  }
+
   event.respondWith(
     fetch(event.request)
       .then(response => {
-        // Network succeeded: cache the fresh response and return it
         const responseClone = response.clone();
         caches.open(CACHE_NAME).then(cache => {
           cache.put(event.request, responseClone);
@@ -42,7 +45,6 @@ self.addEventListener('fetch', event => {
         return response;
       })
       .catch(() => {
-        // Network failed: fall back to cache (offline support)
         return caches.match(event.request);
       })
   );
