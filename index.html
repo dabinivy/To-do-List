@@ -6,6 +6,12 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=0">
     <title>Todo App UI</title>
 
+    <!-- PWA & iOS Safari Support -->
+    <link rel="manifest" href="manifest.json">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <meta name="apple-mobile-web-app-title" content="ToDo">
+    <link rel="apple-touch-icon" href="icon-192.png">
     <!-- React & ReactDOM -->
     <script src="https://unpkg.com/react@18/umd/react.development.js" crossorigin></script>
     <script src="https://unpkg.com/react-dom@18/umd/react-dom.development.js" crossorigin></script>
@@ -15,42 +21,11 @@
 
     <!-- Tailwind CSS -->
     <script src="https://cdn.tailwindcss.com"></script>
-    <!-- Firebase SDKs -->
-    <script type="module">
-        import { initializeApp } from "https://www.gstatic.com/firebasejs/10.9.0/firebase-app.js";
-        import { getFirestore, collection, onSnapshot, addDoc, updateDoc, deleteDoc, doc, query, where } from "https://www.gstatic.com/firebasejs/10.9.0/firebase-firestore.js";
-        import { getAuth, GoogleAuthProvider, signInWithPopup, signOut, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/10.9.0/firebase-auth.js";
 
-        const firebaseConfig = {
-            apiKey: "AIzaSyBKpQiCW0B30lAsqQCcbj4dzNqqm66eyuc",
-            authDomain: "todolist-ec35b.firebaseapp.com",
-            projectId: "todolist-ec35b",
-            storageBucket: "todolist-ec35b.firebasestorage.app",
-            messagingSenderId: "805920873146",
-            appId: "1:805920873146:web:2c59a3c72998b789db0083"
-        };
-
-        const app = initializeApp(firebaseConfig);
-        const db = getFirestore(app);
-        const auth = getAuth(app);
-
-        // Export to window so React can access it
-        window.db = db;
-        window.collection = collection;
-        window.onSnapshot = onSnapshot;
-        window.addDoc = addDoc;
-        window.updateDoc = updateDoc;
-        window.deleteDoc = deleteDoc;
-        window.doc = doc;
-        window.query = query;
-        window.where = where;
-
-        window.auth = auth;
-        window.GoogleAuthProvider = GoogleAuthProvider;
-        window.signInWithPopup = signInWithPopup;
-        window.signOut = signOut;
-        window.onAuthStateChanged = onAuthStateChanged;
-    </script>
+    <!-- Firebase SDK (Compat) -->
+    <script src="https://www.gstatic.com/firebasejs/10.8.1/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/10.8.1/firebase-firestore-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/10.8.1/firebase-auth-compat.js"></script>
 
     <!-- Lucide Icons -->
     <script src="https://unpkg.com/lucide@latest"></script>
@@ -459,8 +434,11 @@
                 setIsEditing(false);
             };
 
+            const isComposingRef = useRef(false);
+
             const handleKeyDown = (e) => {
-                if (e.key === 'Enter') {
+                if (e.key === 'Enter' && !isComposingRef.current) {
+                    e.preventDefault();
                     handleSaveEdit();
                     if (onEditComplete) onEditComplete();
                 } else if (e.key === 'Escape') {
@@ -529,6 +507,8 @@
                                 onChange={(e) => setEditValue(e.target.value)}
                                 onBlur={handleSaveEdit}
                                 onKeyDown={handleKeyDown}
+                                onCompositionStart={() => { isComposingRef.current = true; }}
+                                onCompositionEnd={() => { isComposingRef.current = false; }}
                                 className="bg-transparent border-b border-appGray-500 text-[15px] text-white outline-none w-full"
                                 onClick={(e) => e.stopPropagation()}
                             />
@@ -595,23 +575,61 @@
         const InlineTaskInput = ({ categoryColor, onSave, onCancel }) => {
             const [text, setText] = useState('');
             const inputRef = useRef(null);
+            const isSavingRef = useRef(false);
+            const isComposingRef = useRef(false);
+            const textRef = useRef('');
+            const ignoreBlurRef = useRef(false);
+
+            // Keep textRef in sync with text state
+            useEffect(() => { textRef.current = text; }, [text]);
 
             useEffect(() => {
                 if (inputRef.current) inputRef.current.focus();
             }, []);
 
-            const handleKeyDown = (e) => {
-                if (e.key === 'Enter' && text.trim()) {
-                    onSave(text.trim());
+            const handleSubmit = () => {
+                const val = textRef.current.trim();
+                // We use isSavingRef to prevent overlapping saves, but reset it quickly.
+                if (val && !isSavingRef.current) {
+                    isSavingRef.current = true;
                     setText('');
+                    textRef.current = '';
+
+                    // Prevent blur from closing the input immediately after Enter
+                    ignoreBlurRef.current = true;
+                    setTimeout(() => { ignoreBlurRef.current = false; }, 500);
+
+                    onSave(val);
+                    isSavingRef.current = false; // Reset IMMEDIATELY so user can type the next item fast
+
+                    if (inputRef.current) inputRef.current.focus();
+                }
+            };
+
+            const handleKeyDown = (e) => {
+                if (e.key === 'Enter' && !isComposingRef.current) {
+                    e.preventDefault();
+                    handleSubmit();
                 } else if (e.key === 'Escape') {
                     onCancel();
                 }
             };
 
+            const handleBlur = () => {
+                setTimeout(() => {
+                    if (ignoreBlurRef.current || isSavingRef.current) return;
+                    const val = textRef.current.trim();
+                    if (val) {
+                        isSavingRef.current = true;
+                        onSave(val);
+                    }
+                    onCancel();
+                }, 150);
+            };
+
             return (
                 <div className="flex items-center space-x-4 px-6 py-1.5 animate-fade-in">
-                    <div className="flex-shrink-0">
+                    <div className="flex-shrink-0 cursor-pointer" onMouseDown={(e) => { e.preventDefault(); handleSubmit(); }}>
                         <SquareIcon bgClass="bg-transparent" size="w-6 h-6">
                             <i data-lucide="plus" className={`w-3.5 h-3.5 ${categoryColor.replace('bg-', 'text-')}`}></i>
                         </SquareIcon>
@@ -622,7 +640,9 @@
                         value={text}
                         onChange={(e) => setText(e.target.value)}
                         onKeyDown={handleKeyDown}
-                        onBlur={() => onCancel()}
+                        onCompositionStart={() => { isComposingRef.current = true; }}
+                        onCompositionEnd={() => { isComposingRef.current = false; }}
+                        onBlur={handleBlur}
                         placeholder="할 일을 입력하세요..."
                         className="bg-transparent border-b border-appGray-700 text-[15px] text-white outline-none w-full py-0.5"
                     />
@@ -648,9 +668,9 @@
                     </div>
                     <span className="text-[10px] text-appGray-600 font-medium">알림</span>
                 </div>
-                <div className="flex flex-col items-center space-y-1 w-16 mb-2 cursor-pointer" onClick={() => window.signOut(window.auth)}>
+                <div className="flex flex-col items-center space-y-1 w-16 mb-2">
                     <i data-lucide="user" className="w-6 h-6 text-appGray-600"></i>
-                    <span className="text-[10px] text-appGray-600 font-medium">로그아웃</span>
+                    <span className="text-[10px] text-appGray-600 font-medium">My</span>
                 </div>
             </div>
         );
@@ -735,22 +755,26 @@
             );
         };
 
+        // --- Firebase Configuration ---
+        const firebaseConfig = {
+            apiKey: "AIzaSyBKpQiCW0B30lAsqQCcbj4dzNqqm66eyuc",
+            authDomain: "todolist-ec35b.firebaseapp.com",
+            projectId: "todolist-ec35b",
+            storageBucket: "todolist-ec35b.firebasestorage.app",
+            messagingSenderId: "805920873146",
+            appId: "1:805920873146:web:2c59a3c72998b789db0083"
+        };
+        firebase.initializeApp(firebaseConfig);
+        const db = firebase.firestore();
+        const auth = firebase.auth();
+
         // --- Main App Component ---
         const App = () => {
             const [user, setUser] = useState(null);
-            const [authLoading, setAuthLoading] = useState(true);
-
-            useEffect(() => {
-                if (!window.auth) return;
-                const unsubscribe = window.onAuthStateChanged(window.auth, (currentUser) => {
-                    setUser(currentUser);
-                    setAuthLoading(false);
-                });
-                return () => unsubscribe();
-            }, []);
+            const [loadingAuth, setLoadingAuth] = useState(true);
 
             const [calendarMode, setCalendarMode] = useState('weekly'); // 'weekly' or 'monthly'
-            const [viewDate, setViewDate] = useState(new Date(2026, 2, 2)); // Default to March 2, 2026
+            const [viewDate, setViewDate] = useState(new Date()); // Default to today
             const [isDatePickerOpen, setIsDatePickerOpen] = useState(false);
             const [addingToCategory, setAddingToCategory] = useState({ category: null, afterId: null });
 
@@ -762,32 +786,77 @@
 
             const [todos, setTodos] = useState([]);
 
-            // Fetch tasks from Firestore on mount
+            // 0. Setup Anonymous Authentication and handle Redirect Results
             useEffect(() => {
-                if (!window.db || !user) {
-                    setTodos([]);
-                    return;
-                }
-
-                const q = window.query(
-                    window.collection(window.db, "tasks"),
-                    window.where("userId", "==", user.uid)
-                );
-                const unsubscribe = window.onSnapshot(q, (snapshot) => {
-                    const fetchedTodos = snapshot.docs.map(doc => {
-                        const data = doc.data();
-
-                        // Migration format safety
-                        if (data.category === 'Routine' && !data.statuses) {
-                            return { id: doc.id, ...data, startDate: data.day || '2026-3-2', statuses: {} };
+                // Check if we just came back from a Google Sign-In redirect
+                auth.getRedirectResult().then((result) => {
+                    if (result && result.user) {
+                        console.log("Redirect sign-in/link successful", result);
+                        alert("✅ 구글 계정과 성공적으로 연동되었습니다!");
+                    }
+                }).catch((error) => {
+                    if (error.code === 'auth/credential-already-in-use') {
+                        // The user tried to link, but the Google account is already used by another anonymous user
+                        const confirmSwitch = confirm("이 구글 계정에는 이미 저장된 투두리스트 데이터가 있습니다.\n\n기존 데이터를 불러오시겠습니까?\n(주의: 현재 기기에 작성한 연동 전 데이터는 사라집니다)");
+                        if (confirmSwitch) {
+                            // signInWithCredential can fail silently with redirect results, so we do a fresh sign-in
+                            const provider = new firebase.auth.GoogleAuthProvider();
+                            provider.setCustomParameters({ prompt: 'select_account' });
+                            auth.signInWithRedirect(provider);
                         }
-                        return { id: doc.id, ...data, startDate: data.startDate || data.day };
-                    });
-                    setTodos(fetchedTodos);
+                    } else if (error.code !== 'auth/redirect-cancelled-by-user') {
+                        console.error("Redirect error:", error);
+                        alert("구글 연동 중 오류가 발생했습니다: " + error.message);
+                    }
+                });
+
+                const unsubscribe = auth.onAuthStateChanged(user => {
+                    if (user) {
+                        setUser(user);
+                        setLoadingAuth(false);
+                    } else {
+                        auth.signInAnonymously().catch(error => {
+                            console.error("Auth Error:", error);
+                            setLoadingAuth(false);
+                        });
+                    }
+                });
+                return () => unsubscribe();
+            }, []);
+
+            // 1. Initial Data Load & Migration from localStorage
+            useEffect(() => {
+                if (!user) return;
+
+                const userTodosRef = db.collection('users').doc(user.uid).collection('todos');
+
+                const unsubscribe = userTodosRef.onSnapshot(snapshot => {
+                    const firestoreTodos = snapshot.docs.map(doc => ({
+                        id: doc.id,
+                        ...doc.data()
+                    }));
+
+                    if (firestoreTodos.length === 0) {
+                        // Check for existing localStorage data to migrate
+                        const savedTodos = localStorage.getItem('puppyReactTasks');
+                        if (savedTodos) {
+                            const parsed = JSON.parse(savedTodos);
+                            parsed.forEach((todo, idx) => {
+                                todo.order = idx * 1024; // Assign initial order
+                                userTodosRef.doc(todo.id.toString()).set(todo);
+                            });
+                            localStorage.removeItem('puppyReactTasks');
+                        } else {
+                            // First time ever - start completely blank as requested
+                        }
+                    } else {
+                        // State update from firestore, sorted by order
+                        setTodos(firestoreTodos.sort((a, b) => (a.order || 0) - (b.order || 0) || String(a.id).localeCompare(String(b.id))));
+                    }
                 });
 
                 return () => unsubscribe();
-            }, []);
+            }, [user]);
 
             const formatDate = (date) => `${date.getFullYear()}-${date.getMonth() + 1}-${date.getDate()}`;
             const viewDateKey = formatDate(viewDate);
@@ -802,6 +871,41 @@
                 setViewDate(newDate);
             };
 
+            // --- Handlers for Native Android App ---
+            useEffect(() => {
+                // Flutter will call this function with the Google ID Token
+                window.onAndroidGoogleLoginSuccess = async (idToken) => {
+                    const credential = firebase.auth.GoogleAuthProvider.credential(idToken);
+                    try {
+                        const userCredential = await auth.currentUser.linkWithCredential(credential);
+                        alert("✅ 네이티브 구글 연동에 성공했습니다!");
+                    } catch (error) {
+                        if (error.code === 'auth/credential-already-in-use') {
+                            const confirmSwitch = confirm("이 구글 계정에는 이미 다른 투두리스트 데이터가 있습니다.\n기존 계정으로 로그인하시겠습니까?\n(주의: 현재 기기에 작성한 데이터는 사라집니다)");
+                            if (confirmSwitch) {
+                                try {
+                                    await auth.signInWithCredential(error.credential || credential);
+                                } catch (signInErr) {
+                                    alert("로그인 중 오류가 발생했습니다.");
+                                }
+                            }
+                        } else {
+                            console.error("Native link error:", error);
+                            alert("네이티브 연동 중 오류가 발생했습니다: " + error.message);
+                        }
+                    }
+                };
+
+                window.onAndroidGoogleLoginError = (errorMessage) => {
+                    alert("구글 로그인 실패: " + errorMessage);
+                };
+
+                return () => {
+                    window.onAndroidGoogleLoginSuccess = null;
+                    window.onAndroidGoogleLoginError = null;
+                };
+            }, [user]);
+
             const handleNext = () => {
                 const newDate = new Date(viewDate);
                 if (calendarMode === 'weekly') {
@@ -812,69 +916,117 @@
                 setViewDate(newDate);
             };
 
-            const changeStatus = async (id, newStatus) => {
-                const task = todos.find(t => t.id === id);
-                if (!task) return;
+            // Detect if running inside a WebView
+            const isWebView = /wv|WebView/i.test(navigator.userAgent) ||
+                (navigator.userAgent.includes('Android') && navigator.userAgent.includes('Version/'));
 
-                const taskRef = window.doc(window.db, "tasks", String(id));
-
-                if (task.category === 'Routine') {
-                    await window.updateDoc(taskRef, {
-                        statuses: {
-                            ...(task.statuses || {}),
-                            [viewDateKey]: newStatus
-                        }
-                    });
-                } else {
-                    const oldStatus = task.status;
-                    await window.updateDoc(taskRef, { status: newStatus });
-
-                    // Handle postpone logic by creating a new document in Firestore
-                    if (newStatus === 'postpone' && oldStatus !== 'postpone') {
-                        const taskDate = new Date(task.startDate);
-                        taskDate.setDate(taskDate.getDate() + 1);
-                        await window.addDoc(window.collection(window.db, "tasks"), {
-                            text: task.text,
-                            category: task.category,
-                            startDate: formatDate(taskDate),
-                            status: 'none',
-                            originalId: id,
-                            userId: user.uid
-                        });
+            const linkWithGoogle = async () => {
+                if (window.AndroidAuth) {
+                    // Running inside our custom Flutter WebView: trigger native login
+                    window.AndroidAuth.postMessage('loginWithGoogle');
+                    return;
+                } else if (isWebView) {
+                    // Unknown WebView (like Instagram browser): ask to open in Chrome
+                    const openInChrome = confirm(
+                        "구글 로그인은 보안 정책상 앱 내에서 직접 할 수 없습니다.\n\nChrome 브라우저에서 열어서 로그인하시겠습니까?"
+                    );
+                    if (openInChrome) {
+                        window.open('https://effervescent-kulfi-293bec.netlify.app', '_blank');
                     }
+                    return;
+                }
 
-                    // If postpone is cancelled, find and delete the copy from the next day
-                    if (oldStatus === 'postpone' && newStatus !== 'postpone') {
-                        const postponedCopy = todos.find(t => t.originalId === id);
-                        if (postponedCopy) {
-                            await window.deleteDoc(window.doc(window.db, "tasks", String(postponedCopy.id)));
+                // Real browser (PWA/Chrome): use redirect (more reliable on mobile than popup)
+                const provider = new firebase.auth.GoogleAuthProvider();
+                try {
+                    await user.linkWithRedirect(provider);
+                } catch (error) {
+                    if (error.code === 'auth/credential-already-in-use') {
+                        const confirmSwitch = confirm("\uc774 \uad6c\uae00 \uacc4\uc815\uc5d0\ub294 \uc774\ubbf8 \ub2e4\ub978 \ud22c\ub450\ub9ac\uc2a4\ud2b8 \ub370\uc774\ud130\uac00 \uc788\uc2b5\ub2c8\ub2e4.\n\uae30\uc874 \uacc4\uc815\uc73c\ub85c \ub85c\uadf8\uc778\ud558\uc2dc\uaca0\uc2b5\ub2c8\uae4c?\n(\uc8fc\uc758: \ud604\uc7ac \uae30\uae30\uc5d0 \uc791\uc131\ud55c \ub370\uc774\ud130\ub294 \uc0ac\ub77c\uc9d1\ub2c8\ub2e4)");
+                        if (confirmSwitch) {
+                            try {
+                                await auth.signInWithCredential(error.credential);
+                            } catch (signInErr) {
+                                alert("\ub85c\uadf8\uc778 \uc911 \uc624\ub958\uac00 \ubc1c\uc0dd\ud588\uc2b5\ub2c8\ub2e4.");
+                            }
                         }
+                    } else {
+                        console.error("Link error:", error);
+                        alert("\uc5f0\ub3d9 \uc911 \uc624\ub958\uac00 \ubc1c\uc0dd\ud588\uc2b5\ub2c8\ub2e4: " + error.message);
                     }
                 }
             };
 
-            const editTodo = async (id, newText) => {
-                const taskRef = window.doc(window.db, "tasks", String(id));
-                await window.updateDoc(taskRef, { text: newText });
-            };
-
-            const deleteTodo = async (id) => {
+            const changeStatus = (id, newStatus) => {
+                if (!user) return;
+                const userTodosRef = db.collection('users').doc(user.uid).collection('todos');
                 const task = todos.find(t => t.id === id);
                 if (!task) return;
 
-                const taskRef = window.doc(window.db, "tasks", String(id));
+                if (task.category === 'Routine') {
+                    userTodosRef.doc(id.toString()).set({
+                        statuses: {
+                            ...(task.statuses || {}),
+                            [viewDateKey]: newStatus
+                        }
+                    }, { merge: true });
+                } else {
+                    const oldStatus = task.status;
+                    userTodosRef.doc(id.toString()).set({ status: newStatus }, { merge: true });
+
+                    // If postponed, create a copy for the next day
+                    if (newStatus === 'postpone' && oldStatus !== 'postpone') {
+                        const taskDate = new Date(task.startDate);
+                        taskDate.setDate(taskDate.getDate() + 1);
+                        const newDocRef = userTodosRef.doc();
+                        const newPostponedTask = {
+                            ...task,
+                            startDate: formatDate(taskDate),
+                            status: 'none',
+                            originalId: task.id
+                        };
+                        delete newPostponedTask.id; // Removed explicitly since we spread task
+                        newDocRef.set(newPostponedTask);
+                    }
+
+                    // If postpone is cancelled, remove the copy from the next day
+                    if (oldStatus === 'postpone' && newStatus !== 'postpone') {
+                        // Find and delete tasks that were postponed from this one
+                        todos.filter(t => t.originalId === id).forEach(postponedTask => {
+                            userTodosRef.doc(postponedTask.id).delete();
+                        });
+                    }
+                }
+            };
+
+            const editTodo = (id, newText) => {
+                if (!user) return;
+                // Optimistic UI update
+                setTodos(prev => prev.map(t => t.id === id ? { ...t, text: newText } : t));
+                db.collection('users').doc(user.uid).collection('todos').doc(id.toString()).set({ text: newText }, { merge: true })
+                    .catch(e => alert("수정 실패: " + e.message));
+            };
+
+            const deleteTodo = (id) => {
+                if (!user) return;
+                const userTodosRef = db.collection('users').doc(user.uid).collection('todos');
+                const task = todos.find(t => t.id === id);
+                if (!task) return;
 
                 if (task.category === 'Routine') {
-                    // For routines, just set endDate
-                    await window.updateDoc(taskRef, { endDate: viewDateKey });
+                    // Optimistic UI: hide routine from this date forward
+                    setTodos(prev => prev.map(t => t.id === id ? { ...t, endDate: viewDateKey } : t));
+                    userTodosRef.doc(id.toString()).set({ endDate: viewDateKey }, { merge: true })
+                        .catch(e => alert("삭제 실패: " + e.message));
                 } else {
-                    // Full deletion + cleanup copies
-                    await window.deleteDoc(taskRef);
-
-                    const copies = todos.filter(t => t.originalId === id);
-                    for (const copy of copies) {
-                        await window.deleteDoc(window.doc(window.db, "tasks", String(copy.id)));
-                    }
+                    // Optimistic UI: remove from list immediately
+                    const postponedIds = todos.filter(t => t.originalId === id).map(t => t.id);
+                    setTodos(prev => prev.filter(t => t.id !== id && !postponedIds.includes(t.id)));
+                    userTodosRef.doc(id.toString()).delete()
+                        .catch(e => alert("삭제 실패: " + e.message));
+                    postponedIds.forEach(pid => {
+                        userTodosRef.doc(pid).delete().catch(() => { });
+                    });
                 }
             };
 
@@ -907,81 +1059,76 @@
 
             const handleDropOnItem = (e, targetId) => {
                 e.preventDefault();
-                e.stopPropagation(); // Stop event from bubbling up to category
+                e.stopPropagation();
                 setDragOverItemId(null);
 
                 if (draggedItemId === null || draggedItemId === targetId) return;
 
-                const newTodos = [...todos];
-                const draggedIdx = newTodos.findIndex(t => t.id === draggedItemId);
-                const targetIdx = newTodos.findIndex(t => t.id === targetId);
+                const draggedTask = todos.find(t => t.id === draggedItemId);
+                const targetTask = todos.find(t => t.id === targetId);
+                if (!draggedTask || !targetTask) return;
 
-                if (draggedIdx === -1 || targetIdx === -1) return;
+                const targetCategory = targetTask.category;
+                const sourceCategory = draggedTask.category;
 
-                const draggedTask = newTodos[draggedIdx];
-                const targetTask = newTodos[targetIdx];
+                // Get all items in the target category, sorted
+                const originalCatItems = todos
+                    .filter(t => t.category === targetCategory)
+                    .sort((a, b) => (a.order || 0) - (b.order || 0) || String(a.id).localeCompare(String(b.id)));
 
-                // Determine if we are dragging down within the same list
-                const isDraggingDown = draggedIdx < targetIdx;
+                // Remove dragged item from list (may or may not be in this category)
+                const catItems = originalCatItems.filter(t => t.id !== draggedItemId);
 
-                // Remove dragged item
-                newTodos.splice(draggedIdx, 1);
+                // Find where the target is in the filtered array
+                const targetIdxInCat = catItems.findIndex(t => t.id === targetId);
 
-                // Update category if crossed
-                if (draggedTask.category !== targetTask.category) {
-                    draggedTask.category = targetTask.category;
+                // Determine insert position
+                let insertIdx = targetIdxInCat;
+                if (sourceCategory === targetCategory) {
+                    const origDragIdx = originalCatItems.findIndex(t => t.id === draggedItemId);
+                    const origTargetIdx = originalCatItems.findIndex(t => t.id === targetId);
+                    if (origDragIdx < origTargetIdx) {
+                        insertIdx = targetIdxInCat + 1; // dragging down → after target
+                    }
                 }
 
-                // Insert at the correct position locally (optimistic)
-                const newTargetIdx = newTodos.findIndex(t => t.id === targetId);
-                if (isDraggingDown) {
-                    newTodos.splice(newTargetIdx + 1, 0, draggedTask);
-                } else {
-                    newTodos.splice(newTargetIdx, 0, draggedTask);
+                // Insert dragged item at calculated position
+                catItems.splice(insertIdx, 0, draggedTask);
+
+                // Batch update ALL items in this category with fresh order values
+                const batch = db.batch();
+                if (user) {
+                    const userTodosRef = db.collection('users').doc(user.uid).collection('todos');
+                    catItems.forEach((t, i) => {
+                        batch.update(userTodosRef.doc(String(t.id)), {
+                            order: i * 1024,
+                            category: targetCategory
+                        });
+                    });
+                    batch.commit().catch(err => console.error("Drop batch error:", err));
                 }
 
-                setTodos(newTodos); // Optimistic UI update
-
-                // Update Firestore
-                window.updateDoc(window.doc(window.db, "tasks", String(draggedItemId)), {
-                    category: draggedTask.category
-                }).catch(err => console.error("Error updating drag drop:", err));
                 setDraggedItemId(null);
                 setDraggedItemIdx(null);
             };
 
             const handleDropOnCategory = (categoryName) => {
                 setDragOverCategoryName(null);
-                if (draggedItemId === null || categoryName === 'Routine') return;
+                if (draggedItemId === null || categoryName === 'Routine' || !user) return;
 
-                const newTodos = [...todos];
-                const draggedIdx = newTodos.findIndex(t => t.id === draggedItemId);
+                const draggedTask = todos.find(t => t.id === draggedItemId);
+                if (!draggedTask) return;
 
-                if (draggedIdx === -1) return;
+                // Place at the bottom of the target category
+                const catItems = todos.filter(t => t.category === categoryName && t.id !== draggedItemId);
+                const maxOrder = catItems.length > 0 ? Math.max(...catItems.map(t => t.order || 0)) : 0;
 
-                const draggedTask = newTodos[draggedIdx];
+                const userTodosRef = db.collection('users').doc(user.uid).collection('todos');
+                userTodosRef.doc(String(draggedItemId)).update({
+                    category: categoryName,
+                    order: maxOrder + 1024
+                }).catch(err => console.error("Category drop error:", err));
 
-                // Remove dragged item from its current position
-                newTodos.splice(draggedIdx, 1);
-
-                // Ensure the category is updated if it crossed categories
-                draggedTask.category = categoryName;
-
-                // Put it at the end of the lists for this day and category
-                const lastIdxInCategory = newTodos.findLastIndex(t => t.category === categoryName && t.startDate === viewDateKey);
-                if (lastIdxInCategory !== -1) {
-                    newTodos.splice(lastIdxInCategory + 1, 0, draggedTask);
-                } else {
-                    // If category is completely empty today, just append
-                    newTodos.push(draggedTask);
-                }
-
-                setTodos(newTodos); // Optimistic UI update
-
-                // Update Firestore
-                window.updateDoc(window.doc(window.db, "tasks", String(draggedItemId)), {
-                    category: categoryName
-                }).catch(err => console.error("Error updating category drop:", err));
                 setDraggedItemId(null);
                 setDraggedItemIdx(null);
             };
@@ -1005,37 +1152,10 @@
                 { name: 'Evening', colorClass: 'text-catEvening', bgClass: 'bg-catEvening' },
             ];
 
-            if (authLoading) {
+            if (loadingAuth) {
                 return (
-                    <div className="max-w-md mx-auto min-h-screen bg-appBlack text-white flex items-center justify-center">
-                        <div className="animate-pulse text-appGray-400">로딩 중...</div>
-                    </div>
-                );
-            }
-
-            if (!user) {
-                return (
-                    <div className="max-w-md mx-auto min-h-screen bg-appBlack text-white flex flex-col items-center justify-center p-6">
-                        <h1 className="text-3xl font-bold mb-4">ToDo</h1>
-                        <p className="text-appGray-400 text-center mb-12">나만의 할 일을 체계적으로 관리하세요</p>
-
-                        <button
-                            onClick={() => {
-                                const provider = new window.GoogleAuthProvider();
-                                window.signInWithPopup(window.auth, provider).catch(error => {
-                                    alert("로그인 실패: " + error.message);
-                                });
-                            }}
-                            className="bg-white text-black font-bold py-3 px-6 rounded-full flex items-center space-x-3 hover:bg-gray-100 transition-colors active:scale-95"
-                        >
-                            <svg className="w-5 h-5" viewBox="0 0 24 24">
-                                <path d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z" fill="#4285F4" />
-                                <path d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z" fill="#34A853" />
-                                <path d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z" fill="#FBBC05" />
-                                <path d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z" fill="#EA4335" />
-                            </svg>
-                            <span>Google 계정으로 로그인</span>
-                        </button>
+                    <div className="max-w-md mx-auto min-h-screen bg-appBlack flex items-center justify-center">
+                        <div className="text-white text-sm opacity-50">인증 중...</div>
                     </div>
                 );
             }
@@ -1070,12 +1190,24 @@
                                 }}
                             />
                         </div>
-                        <div className="flex items-center space-x-4">
+                        <div className="flex items-center space-x-3">
+                            {user && user.isAnonymous ? (
+                                <button
+                                    onClick={linkWithGoogle}
+                                    className="bg-blue-600/20 text-blue-400 rounded-full px-3 h-7 text-[12px] font-bold active:bg-blue-600/30 flex items-center justify-center transition-colors"
+                                >
+                                    <i data-lucide="log-in" className="w-3.5 h-3.5 mr-1.5"></i> Google 연동
+                                </button>
+                            ) : (
+                                <span className="bg-green-600/20 text-green-400 rounded-full px-3 h-7 text-[12px] font-bold flex items-center justify-center">
+                                    <i data-lucide="check-circle" className="w-3.5 h-3.5 mr-1.5"></i> 연동됨
+                                </span>
+                            )}
                             <button
                                 onClick={() => {
-                                    setViewDate(new Date(2026, 2, 2));
+                                    setViewDate(new Date());
                                 }}
-                                className="bg-appGray-800 rounded-full px-3 h-7 text-[13px] font-bold active:bg-appGray-700 flex items-center justify-center"
+                                className="bg-appGray-800 rounded-full px-3 h-7 text-[13px] font-bold active:bg-appGray-700 flex items-center justify-center transition-colors hover:bg-appGray-700"
                             >
                                 Today
                             </button>
@@ -1141,7 +1273,7 @@
                                                     onEdit={(newText) => {
                                                         editTodo(todo.id, newText);
                                                     }}
-                                                    onEditComplete={() => setAddingToCategory({ category: cat.name, afterId: todo.id })}
+                                                    /* onEditComplete removed: editing should not trigger consecutive entry */
                                                     onDelete={() => {
                                                         if (todo.category === 'Routine') {
                                                             const msg = '이 루틴을 오늘부터 중단하시겠습니까? (과거 기록은 유지됩니다)';
@@ -1155,21 +1287,38 @@
                                                 />
                                                 {addingToCategory.category === cat.name && addingToCategory.afterId === todo.id && (
                                                     <InlineTaskInput
+                                                        key={`input-after-${todo.id}`}
                                                         categoryColor={cat.bgClass}
-                                                        onSave={async (text) => {
+                                                        onSave={(text) => {
+                                                            const newId = Date.now().toString();
+                                                            const currentIdx = catTodos.findIndex(t => t.id === todo.id);
+                                                            const nextTodo = catTodos[currentIdx + 1];
+                                                            let newOrder = (todo.order || 0) + 512;
+                                                            if (nextTodo) {
+                                                                newOrder = ((todo.order || 0) + (nextTodo.order || 0)) / 2;
+                                                            }
                                                             const newTask = {
                                                                 text: text,
                                                                 category: cat.name,
-                                                                status: cat.name === 'Routine' ? undefined : 'none',
                                                                 startDate: viewDateKey,
-                                                                userId: user.uid
+                                                                order: newOrder
                                                             };
                                                             if (cat.name === 'Routine') {
                                                                 newTask.statuses = {};
+                                                            } else {
+                                                                newTask.status = 'none';
                                                             }
-
-                                                            const docRef = await window.addDoc(window.collection(window.db, "tasks"), newTask);
-                                                            setAddingToCategory({ category: cat.name, afterId: docRef.id });
+                                                            // Optimistically update to avoid unmount flicker
+                                                            setTodos(prev => {
+                                                                const updated = [...prev, { id: newId, ...newTask }];
+                                                                return updated.sort((a, b) => (a.order || 0) - (b.order || 0) || String(a.id).localeCompare(String(b.id)));
+                                                            });
+                                                            if (user) {
+                                                                db.collection('users').doc(user.uid).collection('todos').doc(newId).set(newTask)
+                                                                    .catch(e => alert("저장 실패: " + e.message));
+                                                            }
+                                                            // Don't change afterId — keeps InlineTaskInput mounted so mobile keyboard stays open
+                                                            // setAddingToCategory({ category: cat.name, afterId: newId });
                                                         }}
                                                         onCancel={() => setAddingToCategory({ category: null, afterId: null })}
                                                     />
@@ -1179,20 +1328,31 @@
                                     })}
                                     {addingToCategory.category === cat.name && addingToCategory.afterId === null && (
                                         <InlineTaskInput
+                                            key={`input-bottom-${cat.name}`}
                                             categoryColor={cat.bgClass}
-                                            onSave={async (text) => {
+                                            onSave={(text) => {
+                                                const newId = Date.now().toString();
+                                                const maxOrder = catTodos.length > 0 ? Math.max(...catTodos.map(t => t.order || 0)) : 0;
                                                 const newTask = {
                                                     text: text,
                                                     category: cat.name,
-                                                    status: cat.name === 'Routine' ? undefined : 'none',
                                                     startDate: viewDateKey,
-                                                    userId: user.uid
+                                                    order: maxOrder + 1024
                                                 };
                                                 if (cat.name === 'Routine') {
                                                     newTask.statuses = {};
+                                                } else {
+                                                    newTask.status = 'none';
                                                 }
-
-                                                await window.addDoc(window.collection(window.db, "tasks"), newTask);
+                                                // Optimistic update
+                                                setTodos(prev => {
+                                                    const updated = [...prev, { id: newId, ...newTask }];
+                                                    return updated.sort((a, b) => (a.order || 0) - (b.order || 0) || String(a.id).localeCompare(String(b.id)));
+                                                });
+                                                if (user) {
+                                                    db.collection('users').doc(user.uid).collection('todos').doc(newId).set(newTask)
+                                                        .catch(e => alert("저장 실패: " + e.message));
+                                                }
                                                 // Keep adding at the bottom
                                             }}
                                             onCancel={() => setAddingToCategory({ category: null, afterId: null })}
