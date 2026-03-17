@@ -1205,7 +1205,7 @@
                             />
                         </div>
                         <div className="flex items-center space-x-3">
-                            {user && user.isAnonymous ? (
+                            {(!user || user.providerData.length === 0) ? (
                                 <button
                                     onClick={linkWithGoogle}
                                     className="bg-blue-600/20 text-blue-400 rounded-full px-3 h-7 text-[12px] font-bold active:bg-blue-600/30 flex items-center justify-center transition-colors"
