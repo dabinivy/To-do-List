@@ -791,14 +791,36 @@
                 // Handle the redirect result if the user was sent to Google and came back
                 auth.getRedirectResult().then((result) => {
                     if (result && result.user) {
-                        alert("✅ 기존 구글 계정의 데이터를 성공적으로 불러왔습니다!");
+                        alert("✅ 연동이 완료되었습니다!");
                     }
                 }).catch((error) => {
                     console.error("Redirect Result Error:", error);
                     if (error.code === 'auth/credential-already-in-use') {
-                        // Edge case: They tried to redirect-link an already linked account.
-                        // Since they are now on this account, we can just let onAuthStateChanged handle the sync.
-                        alert("✅ 기존 구글 계정의 데이터를 성공적으로 불러왔습니다!");
+                        // The user tried to link a Google account that already has data.
+                        const confirmSwitch = confirm("이 구글 계정에는 이미 저장된 투두리스트 데이터가 있습니다.\n\n기존 데이터를 불러오시겠습니까?\n(주의: 현재 기기에 작성한 연동 전 데이터는 사라집니다)");
+                        if (confirmSwitch) {
+                            let credential = error.credential;
+                            if (!credential && firebase.auth.GoogleAuthProvider.credentialFromError) {
+                                try {
+                                    credential = firebase.auth.GoogleAuthProvider.credentialFromError(error);
+                                } catch (e) {
+                                    console.error("Credential extraction failed", e);
+                                }
+                            }
+                            
+                            if (credential) {
+                                // Instantly sign them in using the token Google just returned, completely bypassing COOP / popups
+                                auth.signInWithCredential(credential).then(() => {
+                                    alert("✅ 기존 구글 계정의 데이터를 성공적으로 불러왔습니다!");
+                                }).catch(err => {
+                                    alert("로그인 중 오류가 발생했습니다: " + err.message);
+                                });
+                            } else {
+                                alert("보안 정책으로 인해 재인증이 필요합니다.");
+                                const provider = new firebase.auth.GoogleAuthProvider();
+                                auth.signInWithRedirect(provider);
+                            }
+                        }
                     } else if (error.code !== 'auth/redirect-cancelled-by-user') {
                         alert("리다이렉트 로그인 중 오류가 발생했습니다: " + error.message);
                     }
@@ -934,40 +956,12 @@
                 try {
                     setLoadingAuth(true);
                     const provider = new firebase.auth.GoogleAuthProvider();
-                    
-                    try {
-                        const result = await user.linkWithPopup(provider);
-                        console.log("Popup link successful", result);
-                        alert("✅ 구글 계정과 성공적으로 연동되었습니다!");
-                        setLoadingAuth(false);
-                    } catch (popupError) {
-                        // If popup is blocked or fails due to COOP/CORS, fallback to redirect
-                        if (popupError.code === 'auth/popup-blocked' || popupError.code === 'auth/popup-closed-by-user') {
-                             throw popupError; // Let the outer catch handle intentional closures
-                        }
-                        
-                        if (popupError.code === 'auth/credential-already-in-use') {
-                             throw popupError; // Handle this specifically below
-                        }
-                        
-                        console.warn("Popup failed, trying redirect...", popupError);
-                        await user.linkWithRedirect(provider);
-                        return; // Execution stops here as the page redirects
-                    }
+                    // Always use redirect to avoid COOP / Popup Blocker obliteration on modern browsers
+                    await user.linkWithRedirect(provider);
                 } catch (error) {
                     setLoadingAuth(false);
-                    if (error.code === 'auth/credential-already-in-use') {
-                        const confirmSwitch = confirm("이 구글 계정에는 이미 저장된 투두리스트 데이터가 있습니다.\n\n기존 데이터를 불러오시겠습니까?\n(주의: 현재 기기에 작성한 연동 전 데이터는 사라집니다)");
-                        if (confirmSwitch) {
-                            // Focus solely on signInWithRedirect since signInWithCredential can silently hang due to browser security policies (COOP/third-party cookies)
-                            const provider = new firebase.auth.GoogleAuthProvider();
-                            provider.setCustomParameters({ prompt: 'select_account' });
-                            auth.signInWithRedirect(provider);
-                        }
-                    } else if (error.code !== 'auth/popup-closed-by-user' && error.code !== 'auth/cancelled-popup-request') {
-                        console.error("Link error:", error);
-                        alert("구글 연동 중 오류가 발생했습니다 (" + error.code + "): " + error.message);
-                    }
+                    console.error("Redirect init error:", error);
+                    alert("구글 연동 초기화 중 오류가 발생했습니다: " + error.message);
                 }
             };
 
