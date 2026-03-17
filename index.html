@@ -788,13 +788,28 @@
 
             // 0. Setup Anonymous Authentication and handle Redirect Results
             useEffect(() => {
-
+                // Handle the redirect result if the user was sent to Google and came back
+                auth.getRedirectResult().then((result) => {
+                    if (result && result.user) {
+                        alert("✅ 기존 구글 계정의 데이터를 성공적으로 불러왔습니다!");
+                    }
+                }).catch((error) => {
+                    console.error("Redirect Result Error:", error);
+                    if (error.code === 'auth/credential-already-in-use') {
+                        // Edge case: They tried to redirect-link an already linked account.
+                        // Since they are now on this account, we can just let onAuthStateChanged handle the sync.
+                        alert("✅ 기존 구글 계정의 데이터를 성공적으로 불러왔습니다!");
+                    } else if (error.code !== 'auth/redirect-cancelled-by-user') {
+                        alert("리다이렉트 로그인 중 오류가 발생했습니다: " + error.message);
+                    }
+                });
 
                 const unsubscribe = auth.onAuthStateChanged(user => {
                     if (user) {
                         setUser(user);
                         setLoadingAuth(false);
                     } else {
+                        // Only sign in anonymously if we are not currently trying to process a redirect
                         auth.signInAnonymously().catch(error => {
                             console.error("Auth Error:", error);
                             setLoadingAuth(false);
@@ -919,10 +934,26 @@
                 try {
                     setLoadingAuth(true);
                     const provider = new firebase.auth.GoogleAuthProvider();
-                    const result = await user.linkWithPopup(provider);
-                    console.log("Popup link successful", result);
-                    alert("✅ 구글 계정과 성공적으로 연동되었습니다!");
-                    setLoadingAuth(false);
+                    
+                    try {
+                        const result = await user.linkWithPopup(provider);
+                        console.log("Popup link successful", result);
+                        alert("✅ 구글 계정과 성공적으로 연동되었습니다!");
+                        setLoadingAuth(false);
+                    } catch (popupError) {
+                        // If popup is blocked or fails due to COOP/CORS, fallback to redirect
+                        if (popupError.code === 'auth/popup-blocked' || popupError.code === 'auth/popup-closed-by-user') {
+                             throw popupError; // Let the outer catch handle intentional closures
+                        }
+                        
+                        if (popupError.code === 'auth/credential-already-in-use') {
+                             throw popupError; // Handle this specifically below
+                        }
+                        
+                        console.warn("Popup failed, trying redirect...", popupError);
+                        await user.linkWithRedirect(provider);
+                        return; // Execution stops here as the page redirects
+                    }
                 } catch (error) {
                     setLoadingAuth(false);
                     if (error.code === 'auth/credential-already-in-use') {
@@ -947,13 +978,7 @@
                                 alert("보안 정책으로 인해 추가 확인이 필요합니다. 다시 한번 계정을 선택해 주세요.");
                                 const provider = new firebase.auth.GoogleAuthProvider();
                                 provider.setCustomParameters({ prompt: 'select_account' });
-                                auth.signInWithPopup(provider).then(() => {
-                                    alert("✅ 기존 구글 계정의 데이터를 성공적으로 불러왔습니다!");
-                                }).catch(err => {
-                                    if (err.code !== 'auth/popup-closed-by-user' && err.code !== 'auth/cancelled-popup-request') {
-                                        alert("팝업 로그인 중 오류가 발생했습니다: " + err.message);
-                                    }
-                                });
+                                auth.signInWithRedirect(provider); // Changed to redirect to avoid popup blockers
                             }
                         }
                     } else if (error.code !== 'auth/popup-closed-by-user' && error.code !== 'auth/cancelled-popup-request') {
