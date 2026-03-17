@@ -927,17 +927,38 @@
                     setLoadingAuth(false);
                     if (error.code === 'auth/credential-already-in-use') {
                         const confirmSwitch = confirm("이 구글 계정에는 이미 저장된 투두리스트 데이터가 있습니다.\n\n기존 데이터를 불러오시겠습니까?\n(주의: 현재 기기에 작성한 연동 전 데이터는 사라집니다)");
-                        if (confirmSwitch && error.credential) {
-                            // Use the existing credential to sign in directly, bypassing popup blocks
-                            auth.signInWithCredential(error.credential).then(() => {
-                                alert("✅ 기존 구글 계정의 데이터를 성공적으로 불러왔습니다!");
-                            }).catch(err => {
-                                alert("로그인 중 오류가 발생했습니다: " + err.message);
-                            });
+                        if (confirmSwitch) {
+                            let credential = error.credential;
+                            if (!credential && firebase.auth.GoogleAuthProvider.credentialFromError) {
+                                try {
+                                    credential = firebase.auth.GoogleAuthProvider.credentialFromError(error);
+                                } catch (e) {
+                                    console.error("Credential extraction failed", e);
+                                }
+                            }
+                            
+                            if (credential) {
+                                auth.signInWithCredential(credential).then(() => {
+                                    alert("✅ 기존 구글 계정의 데이터를 성공적으로 불러왔습니다!");
+                                }).catch(err => {
+                                    alert("자격 증명 로그인 중 오류가 발생했습니다: " + err.message);
+                                });
+                            } else {
+                                alert("보안 정책으로 인해 추가 확인이 필요합니다. 다시 한번 계정을 선택해 주세요.");
+                                const provider = new firebase.auth.GoogleAuthProvider();
+                                provider.setCustomParameters({ prompt: 'select_account' });
+                                auth.signInWithPopup(provider).then(() => {
+                                    alert("✅ 기존 구글 계정의 데이터를 성공적으로 불러왔습니다!");
+                                }).catch(err => {
+                                    if (err.code !== 'auth/popup-closed-by-user' && err.code !== 'auth/cancelled-popup-request') {
+                                        alert("팝업 로그인 중 오류가 발생했습니다: " + err.message);
+                                    }
+                                });
+                            }
                         }
                     } else if (error.code !== 'auth/popup-closed-by-user' && error.code !== 'auth/cancelled-popup-request') {
                         console.error("Link error:", error);
-                        alert("구글 연동 중 오류가 발생했습니다: " + error.message);
+                        alert("구글 연동 중 오류가 발생했습니다 (" + error.code + "): " + error.message);
                     }
                 }
             };
